@@ -10,7 +10,8 @@ import (
 
 func Health(c *gin.Context) {
 	c.JSON(http.StatusOK, core.Response{
-		Status: "ok",
-		Code:   "success",
+		Status:  "ok",
+		Code:    "success",
+		Message: "Service is online",
 	})
 }

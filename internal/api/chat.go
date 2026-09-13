@@ -226,6 +226,61 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 	}})
 }
 
+func (s *ChatService) DeleteGroup(c *gin.Context) {
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	userID := currentUserID(c)
+
+	s.groupMu.Lock()
+	defer s.groupMu.Unlock()
+
+	group, err := s.getGroup(groupID)
+	if errors.Is(err, redis.Nil) {
+		writeError(c, http.StatusNotFound, "group_not_found", "group not found")
+		return
+	}
+	if err != nil {
+		log.Printf("redis group read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if group.OwnerID != userID {
+		writeError(c, http.StatusForbidden, "not_group_owner", "only the group owner can delete this group")
+		return
+	}
+
+	ctx := context.Background()
+	members, err := s.redis.SMembers(ctx, groupMembersKey(groupID)).Result()
+	if err != nil {
+		log.Printf("redis group member read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	if _, err := s.redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for _, memberID := range members {
+			pipe.SRem(ctx, userGroupsKey(memberID), groupID)
+		}
+		pipe.SRem(ctx, ownedGroupsKey(userID), groupID)
+		pipe.Del(ctx, groupKey(groupID), groupMembersKey(groupID), messagesKey(groupID))
+		return nil
+	}); err != nil {
+		log.Printf("redis group deletion failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	s.hub.Broadcast(groupID, core.WSEvent{
+		Event:   "group_delete",
+		GroupID: groupID,
+		Data: gin.H{
+			"group_id": groupID,
+		},
+	})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
+		"group_id": groupID,
+	}})
+}
+
 func (s *ChatService) SendMessage(c *gin.Context) {
 	groupID := strings.TrimSpace(c.Param("group_id"))
 	userID := currentUserID(c)
@@ -284,6 +339,7 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 	websocket.Server{
 		Handler: websocket.Handler(func(conn *websocket.Conn) {
 			client := s.hub.Register(userID, "")
+			log.Printf("Websocket connected: %s", userID)
 			defer s.hub.Unregister(client)
 			defer conn.Close()
 
@@ -450,6 +506,10 @@ func (s *Service) userByEmail(email string) (core.UserData, error) {
 
 func isUserRecordKey(key string) bool {
 	return strings.HasPrefix(key, "user:") && strings.Count(key, ":") == 1 && strings.TrimPrefix(key, "user:") != ""
+}
+
+func isTokenRecordKey(key string) bool {
+	return strings.HasPrefix(key, "token:") && strings.Count(key, ":") == 1 && strings.TrimPrefix(key, "token:") != ""
 }
 
 func (s *Service) validateToken(token string) (string, bool) {

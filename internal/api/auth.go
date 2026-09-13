@@ -41,6 +41,11 @@ type updateProfileRequest struct {
 	Email    *string `json:"email" binding:"omitempty,email"`
 }
 
+type resetPasswordRequest struct {
+	Password    string `json:"password"`
+	NewPassword string `json:"new_password"`
+}
+
 type userResponse struct {
 	ID       string   `json:"id"`
 	Username string   `json:"username"`
@@ -301,6 +306,89 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: responseUser})
 }
 
+func (s *Service) ResetPassword(c *gin.Context) {
+	var request resetPasswordRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "password must be at least 8 characters")
+		return
+	}
+	newPassword := request.Password
+	if newPassword == "" {
+		newPassword = request.NewPassword
+	}
+	if len([]rune(newPassword)) < 8 {
+		writeError(c, http.StatusBadRequest, "invalid_password", "password must be at least 8 characters")
+		return
+	}
+
+	userID, ok := c.Get("user_id")
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
+		return
+	}
+	userIDValue, ok := userID.(string)
+	if !ok || strings.TrimSpace(userIDValue) == "" {
+		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
+		return
+	}
+	oldToken, ok := c.Get("token")
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
+		return
+	}
+	oldTokenValue, ok := oldToken.(string)
+	if !ok || strings.TrimSpace(oldTokenValue) == "" {
+		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, err := s.userByID(userIDValue)
+	if err != nil {
+		if !errors.Is(err, redis.Nil) {
+			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			return
+		}
+		writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+		return
+	}
+
+	if !s.tokenBelongsToUser(oldTokenValue, user.Id) {
+		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to reset password")
+		return
+	}
+
+	newToken, err := s.createToken(user.Id)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	user.PasswordHash = string(hash)
+	user.Token = newToken
+	if err := s.storeUser(user); err != nil {
+		_ = s.redis.Del(context.Background(), tokenKey(newToken)).Err()
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if err := s.redis.Del(context.Background(), tokenKey(oldTokenValue)).Err(); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if s.hub != nil {
+		s.hub.CloseUser(user.Id)
+	}
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
+		"token": newToken,
+	}})
+}
+
 func (s *Service) tokenBelongsToUser(token, userID string) bool {
 	value, err := s.redis.Get(context.Background(), tokenKey(token)).Result()
 	if err != nil {
@@ -388,8 +476,6 @@ func (s *Service) addOwnedGroup(userID, groupID string) error {
 	}
 	return s.redis.SAdd(context.Background(), ownedGroupsKey(userID), groupID).Err()
 }
-
-// func (s *Service)
 
 func bindCredentials(c *gin.Context, request *credentialsRequest) bool {
 	if err := c.ShouldBindJSON(request); err != nil {

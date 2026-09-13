@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,20 +29,10 @@ var errAlreadyGroupMember = errors.New("already a group member")
 var errUserNotFound = errors.New("user not found")
 
 type groupRecord struct {
-	GroupID   string   `json:"group_id"`
-	ID        string   `json:"id,omitempty"` // legacy Redis records
-	Name      string   `json:"name"`
-	Users     []string `json:"users"`
-	OwnerID   string   `json:"owner_id"`
-	CreatedAt string   `json:"created_at"`
-}
-
-type chatMessage struct {
-	ID        string `json:"id"`
 	GroupID   string `json:"group_id"`
-	UserID    string `json:"user_id"`
-	Email     string `json:"email"`
-	Content   string `json:"content"`
+	ID        string `json:"id,omitempty"` // legacy Redis records
+	Name      string `json:"name"`
+	OwnerID   string `json:"owner_id"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -83,7 +74,12 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_group_name", "group name must be between 1 and 100 characters")
 		return
 	}
-	if !s.auth.canCreateGroup(userID) {
+	canCreate, err := s.auth.canCreateGroup(userID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if !canCreate {
 		writeError(c, http.StatusConflict, "group_limit_reached", "a user can create at most 15 groups")
 		return
 	}
@@ -91,7 +87,6 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 	group := groupRecord{
 		GroupID:   s.snowflake.Next(),
 		Name:      name,
-		Users:     []string{},
 		OwnerID:   userID,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
@@ -107,7 +102,7 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 	if err := s.auth.addOwnedGroup(userID, group.GroupID); err != nil {
-		_ = s.redis.Del(context.Background(), groupKey(group.GroupID), groupMembersKey(group.GroupID), userGroupsKey(userID)).Err()
+		_ = s.redis.Del(context.Background(), groupKey(group.GroupID), groupMembersKey(group.GroupID), userGroupsKey(userID), ownedGroupsKey(userID)).Err()
 		log.Printf("redis user group write failed group_id=%s user_id=%s: %v", group.GroupID, userID, err)
 		if errors.Is(err, errGroupLimitReached) {
 			writeError(c, http.StatusConflict, "group_limit_reached", "a user can create at most 15 groups")
@@ -163,6 +158,14 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	s.hub.Broadcast(groupID, core.WSEvent{
+		Event:   "member_join",
+		GroupID: groupID,
+		Data: gin.H{
+			"group_id": groupID,
+			"user_id":  userID,
+		},
+	})
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"group_id": groupID,
 		"user_id":  userID,
@@ -187,26 +190,16 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		return
 	}
 
-	found := false
-	updatedUsers := make([]string, 0, len(group.Users))
-	for _, memberID := range group.Users {
-		if memberID == userID {
-			found = true
-			continue
-		}
-		updatedUsers = append(updatedUsers, memberID)
+	found, err := s.redis.SIsMember(context.Background(), groupMembersKey(groupID), userID).Result()
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
 	}
 	if !found {
 		writeError(c, http.StatusNotFound, "not_group_member", "user is not a member of this group")
 		return
 	}
 
-	group.Users = updatedUsers
-	if err := s.storeGroup(group); err != nil {
-		log.Printf("redis group member removal failed group_id=%s user_id=%s: %v", groupID, userID, err)
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-		return
-	}
 	ctx := context.Background()
 	if err := s.redis.SRem(ctx, groupMembersKey(groupID), userID).Err(); err != nil {
 		log.Printf("redis group member set removal failed group_id=%s user_id=%s: %v", groupID, userID, err)
@@ -218,6 +211,14 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	s.hub.Broadcast(groupID, core.WSEvent{
+		Event:   "member_leave",
+		GroupID: groupID,
+		Data: gin.H{
+			"group_id": groupID,
+			"user_id":  userID,
+		},
+	})
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"group_id": groupID,
@@ -257,69 +258,56 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	s.hub.Broadcast(groupID, core.WSEvent{Event: "message", Data: message})
+	s.hub.Broadcast(groupID, core.WSEvent{Event: "message", GroupID: groupID, Data: message})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: message})
 }
 
 func (s *ChatService) WebSocket(c *gin.Context) {
-	token, ok := websocketToken(c)
-	if !ok {
-		c.JSON(http.StatusUnauthorized, core.Response{Status: "error", Code: "missing_token", Data: gin.H{"message": "a bearer token or token query parameter is required"}})
-		return
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" {
+		if headerToken, ok := bearerToken(c); ok {
+			token = headerToken
+		}
 	}
 	userID, ok := s.auth.validateToken(token)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, core.Response{Status: "error", Code: "invalid_token", Data: gin.H{"message": "token is invalid"}})
-		return
-	}
-	groupID := strings.TrimSpace(c.Param("group_id"))
-	if _, err := s.getGroup(groupID); errors.Is(err, redis.Nil) {
-		c.JSON(http.StatusNotFound, core.Response{Status: "error", Code: "group_not_found", Data: gin.H{"message": "group not found"}})
-		return
-	} else if err != nil {
-		log.Printf("redis websocket group read failed group_id=%s: %v", groupID, err)
-		c.JSON(http.StatusServiceUnavailable, core.Response{Status: "error", Code: "redis_unavailable", Data: gin.H{"message": errRedisUnavailable.Error()}})
-		return
-	}
-	if !s.isMember(groupID, userID) {
-		c.JSON(http.StatusForbidden, core.Response{Status: "error", Code: "not_group_member", Data: gin.H{"message": "user is not a member of this group"}})
+		code := "invalid_token"
+		message := "token is invalid"
+		if token == "" {
+			code = "missing_token"
+			message = "a bearer token is required"
+		}
+		writeError(c, http.StatusUnauthorized, code, message)
 		return
 	}
 
-	websocket.Handler(func(conn *websocket.Conn) {
-		client := s.hub.Register(userID, groupID)
-		defer s.hub.Unregister(client)
-		defer conn.Close()
+	websocket.Server{
+		Handler: websocket.Handler(func(conn *websocket.Conn) {
+			client := s.hub.Register(userID, "")
+			defer s.hub.Unregister(client)
+			defer conn.Close()
 
-		go func() {
-			for payload := range client.Send {
-				if err := websocket.Message.Send(conn, string(payload)); err != nil {
-					_ = conn.Close()
+			go func() {
+				for payload := range client.Send {
+					if err := websocket.Message.Send(conn, string(payload)); err != nil {
+						_ = conn.Close()
+						return
+					}
+				}
+				_ = conn.Close()
+			}()
+
+			for {
+				var incoming any
+				if err := websocket.JSON.Receive(conn, &incoming); err != nil {
 					return
 				}
 			}
-			_ = conn.Close()
-		}()
-
-		for {
-			var incoming core.WSEvent
-			if err := websocket.JSON.Receive(conn, &incoming); err != nil {
-				return
-			}
-			if incoming.Event != "message" {
-				continue
-			}
-			content, err := websocketMessageContent(incoming)
-			if err != nil {
-				continue
-			}
-			message, _, err := s.createMessage(groupID, userID, content)
-			if err != nil {
-				continue
-			}
-			s.hub.Broadcast(groupID, core.WSEvent{Event: "message", Data: message})
-		}
-	}).ServeHTTP(c.Writer, c.Request)
+		}),
+		Handshake: func(*websocket.Config, *http.Request) error {
+			return nil
+		},
+	}.ServeHTTP(c.Writer, c.Request)
 }
 
 func (s *ChatService) storeGroup(group groupRecord) error {
@@ -356,12 +344,6 @@ func (s *ChatService) getGroup(groupID string) (groupRecord, error) {
 	if group.GroupID == "" {
 		group.GroupID = group.ID
 	}
-	if group.Users == nil {
-		members, membersErr := s.redis.SMembers(context.Background(), groupMembersKey(group.GroupID)).Result()
-		if membersErr == nil {
-			group.Users = members
-		}
-	}
 	return group, nil
 }
 
@@ -370,21 +352,12 @@ func (s *ChatService) addMember(groupID, userID string) error {
 	defer s.groupMu.Unlock()
 
 	ctx := context.Background()
-	group, err := s.getGroup(groupID)
+	member, err := s.redis.SIsMember(ctx, groupMembersKey(groupID), userID).Result()
 	if err != nil {
 		return err
 	}
-	for _, memberID := range group.Users {
-		if memberID == userID {
-			if err := s.redis.SAdd(ctx, groupMembersKey(groupID), userID).Err(); err != nil {
-				return err
-			}
-			return errAlreadyGroupMember
-		}
-	}
-	group.Users = append(group.Users, userID)
-	if err := s.storeGroup(group); err != nil {
-		return err
+	if member {
+		return errAlreadyGroupMember
 	}
 	if err := s.redis.SAdd(ctx, groupMembersKey(groupID), userID).Err(); err != nil {
 		return err
@@ -397,44 +370,26 @@ func (s *ChatService) isMember(groupID, userID string) bool {
 	return err == nil && member
 }
 
-func (s *ChatService) createMessage(groupID, userID, content string) (chatMessage, []byte, error) {
-	user, ok := s.auth.userByID(userID)
-	if !ok {
-		return chatMessage{}, nil, errUserNotFound
+func (s *ChatService) createMessage(groupID, userID, content string) (core.Message, []byte, error) {
+	authorID, err := strconv.Atoi(userID)
+	if err != nil {
+		return core.Message{}, nil, err
 	}
-	message := chatMessage{
-		ID:        s.snowflake.Next(),
-		GroupID:   groupID,
-		UserID:    userID,
-		Email:     user.Email,
-		Content:   content,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	message := core.Message{
+		Id:       s.snowflake.Next(),
+		AuthorId: authorID,
+		Content:  content,
 	}
 	payload, err := json.Marshal(message)
 	if err != nil {
-		return chatMessage{}, nil, err
+		return core.Message{}, nil, err
 	}
 	if err := s.redis.RPush(context.Background(), messagesKey(groupID), payload).Err(); err != nil {
-		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.ID, err)
-		return chatMessage{}, nil, err
+		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.Id, err)
+		return core.Message{}, nil, err
 	}
-	log.Printf("redis message stored group_id=%s message_id=%s user_id=%s", groupID, message.ID, userID)
+	log.Printf("redis message stored group_id=%s message_id=%s user_id=%s", groupID, message.Id, userID)
 	return message, payload, nil
-}
-
-func websocketMessageContent(event core.WSEvent) (string, error) {
-	if event.Content != "" {
-		return validateMessageContent(event.Content)
-	}
-	data, err := json.Marshal(event.Data)
-	if err != nil {
-		return "", err
-	}
-	var message core.WSMessage
-	if err := json.Unmarshal(data, &message); err != nil {
-		return "", err
-	}
-	return validateMessageContent(message.Content)
 }
 
 func validateMessageContent(value string) (string, error) {
@@ -450,23 +405,51 @@ func currentUserID(c *gin.Context) string {
 	return userID.(string)
 }
 
-func websocketToken(c *gin.Context) (string, bool) {
-	if token, ok := bearerToken(c); ok {
-		return token, true
+func (s *Service) userByID(userID string) (core.UserData, error) {
+	value, err := s.redis.Get(context.Background(), userKey(userID)).Result()
+	if err != nil {
+		return core.UserData{}, err
 	}
-	token := strings.TrimSpace(c.Query("token"))
-	return token, token != ""
+	var record redisUserRecord
+	if err := json.Unmarshal([]byte(value), &record); err != nil {
+		return core.UserData{}, err
+	}
+	if record.ID == "" {
+		return core.UserData{}, errors.New("invalid redis user record")
+	}
+	return core.UserData{Id: record.ID, Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
 }
 
-func (s *Service) userByID(userID string) (core.UserData, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, user := range s.users {
-		if user.Id == userID {
-			return user, true
+func (s *Service) userByEmail(email string) (core.UserData, error) {
+	ctx := context.Background()
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.redis.Scan(ctx, cursor, "user:*", 0).Result()
+		if err != nil {
+			return core.UserData{}, err
+		}
+		for _, key := range keys {
+			if !isUserRecordKey(key) {
+				continue
+			}
+			userID := strings.TrimPrefix(key, "user:")
+			user, err := s.userByID(userID)
+			if err != nil {
+				return core.UserData{}, err
+			}
+			if user.Email == normalizeEmail(email) {
+				return user, nil
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			return core.UserData{}, redis.Nil
 		}
 	}
-	return core.UserData{}, false
+}
+
+func isUserRecordKey(key string) bool {
+	return strings.HasPrefix(key, "user:") && strings.Count(key, ":") == 1 && strings.TrimPrefix(key, "user:") != ""
 }
 
 func (s *Service) validateToken(token string) (string, bool) {
@@ -484,4 +467,5 @@ func (s *Service) validateToken(token string) (string, bool) {
 func groupKey(groupID string) string        { return "group:" + groupID }
 func groupMembersKey(groupID string) string { return "group:" + groupID + ":members" }
 func userGroupsKey(userID string) string    { return "user:" + userID + ":groups" }
+func ownedGroupsKey(userID string) string   { return "user:" + userID + ":owned-groups" }
 func messagesKey(groupID string) string     { return "group:" + groupID + ":messages" }

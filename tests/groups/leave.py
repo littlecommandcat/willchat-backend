@@ -6,7 +6,7 @@ import requests
 BASE_URL = "http://localhost:8080"
 EMAIL = "testtest1@gmail.com"
 PASSWORD = "123123123"
-GROUP_ID = os.getenv("GROUP_ID", "886623179370401792")
+GROUP_ID = os.getenv("GROUP_ID", "886949059682635776")
 
 
 def request(method, path, **kwargs):

@@ -6,7 +6,7 @@ import requests
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
 EMAIL = os.getenv("EMAIL", "testtest1@gmail.com")
 PASSWORD = os.getenv("PASSWORD", "123123123")
-GROUP_ID = os.getenv("GROUP_ID", "886623179370401792")
+GROUP_ID = os.getenv("GROUP_ID", "886949059682635776")
 MESSAGE_CONTENT = os.getenv("MESSAGE_CONTENT", "Hello from tests/chat/send.py")
 
 

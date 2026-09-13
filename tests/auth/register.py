@@ -4,6 +4,7 @@ import requests
 BASE_URL = "http://localhost:8080"
 EMAIL = "testtest1@gmail.com"
 PASSWORD = "123123123"
+USERNAME = "testtest1"
 
 
 def request(method, path, **kwargs):
@@ -16,7 +17,7 @@ def request(method, path, **kwargs):
 response, body = request(
     "POST",
     "/auth/register",
-    json={"email": EMAIL, "password": PASSWORD},
+    json={"username": USERNAME, "email": EMAIL, "password": PASSWORD},
 )
 print("register status:", response.status_code)
 print("register body:", body)

@@ -16,9 +16,11 @@ import (
 
 type redisUserRecord struct {
 	ID           string   `json:"id"`
+	Username     string   `json:"username"`
 	Email        string   `json:"email"`
 	PasswordHash string   `json:"password_hash"`
 	GroupIDs     []string `json:"group_ids"`
+	Token        string   `json:"token"`
 }
 
 func main() {

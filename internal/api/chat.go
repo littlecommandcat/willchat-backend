@@ -25,6 +25,7 @@ const (
 
 var errGroupLimitReached = errors.New("group limit reached")
 var errAlreadyGroupMember = errors.New("already a group member")
+var errUserNotFound = errors.New("user not found")
 
 type groupRecord struct {
 	GroupID   string   `json:"group_id"`
@@ -56,18 +57,17 @@ type ChatService struct {
 	redis     *redis.Client
 	snowflake *core.Snowflake
 	auth      *Service
+	hub       *core.Hub
 
-	groupMu       sync.Mutex
-	connectionsMu sync.Mutex
-	connections   map[string]map[*websocket.Conn]struct{}
+	groupMu sync.Mutex
 }
 
-func NewChatService(redisClient *redis.Client, snowflake *core.Snowflake, authService *Service) *ChatService {
+func NewChatService(redisClient *redis.Client, snowflake *core.Snowflake, authService *Service, hub *core.Hub) *ChatService {
 	return &ChatService{
-		redis:       redisClient,
-		snowflake:   snowflake,
-		auth:        authService,
-		connections: make(map[string]map[*websocket.Conn]struct{}),
+		redis:     redisClient,
+		snowflake: snowflake,
+		auth:      authService,
+		hub:       hub,
 	}
 }
 
@@ -248,32 +248,16 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		return
 	}
 
-	user, ok := s.auth.userByID(userID)
-	if !ok {
-		writeError(c, http.StatusNotFound, "user_not_found", "user not found")
-		return
-	}
-	message := chatMessage{
-		ID:        s.snowflake.Next(),
-		GroupID:   groupID,
-		UserID:    userID,
-		Email:     user.Email,
-		Content:   content,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
-	}
-	payload, err := json.Marshal(message)
+	message, _, err := s.createMessage(groupID, userID, content)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "message_encode_failed", "unable to encode message")
-		return
-	}
-	ctx := context.Background()
-	if err := s.redis.RPush(ctx, messagesKey(groupID), payload).Err(); err != nil {
-		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.ID, err)
+		if errors.Is(err, errUserNotFound) {
+			writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+			return
+		}
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	log.Printf("redis message stored group_id=%s message_id=%s user_id=%s", groupID, message.ID, userID)
-	s.broadcast(groupID, payload)
+	s.hub.Broadcast(groupID, core.WSEvent{Event: "message", Data: message})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: message})
 }
 
@@ -303,14 +287,37 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 	}
 
 	websocket.Handler(func(conn *websocket.Conn) {
-		s.addConnection(groupID, conn)
-		defer s.removeConnection(groupID, conn)
+		client := s.hub.Register(userID, groupID)
+		defer s.hub.Unregister(client)
 		defer conn.Close()
+
+		go func() {
+			for payload := range client.Send {
+				if err := websocket.Message.Send(conn, string(payload)); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+			_ = conn.Close()
+		}()
+
 		for {
-			var incoming string
-			if err := websocket.Message.Receive(conn, &incoming); err != nil {
+			var incoming core.WSEvent
+			if err := websocket.JSON.Receive(conn, &incoming); err != nil {
 				return
 			}
+			if incoming.Event != "message" {
+				continue
+			}
+			content, err := websocketMessageContent(incoming)
+			if err != nil {
+				continue
+			}
+			message, _, err := s.createMessage(groupID, userID, content)
+			if err != nil {
+				continue
+			}
+			s.hub.Broadcast(groupID, core.WSEvent{Event: "message", Data: message})
 		}
 	}).ServeHTTP(c.Writer, c.Request)
 }
@@ -390,38 +397,52 @@ func (s *ChatService) isMember(groupID, userID string) bool {
 	return err == nil && member
 }
 
-func (s *ChatService) addConnection(groupID string, conn *websocket.Conn) {
-	s.connectionsMu.Lock()
-	defer s.connectionsMu.Unlock()
-	if s.connections[groupID] == nil {
-		s.connections[groupID] = make(map[*websocket.Conn]struct{})
+func (s *ChatService) createMessage(groupID, userID, content string) (chatMessage, []byte, error) {
+	user, ok := s.auth.userByID(userID)
+	if !ok {
+		return chatMessage{}, nil, errUserNotFound
 	}
-	s.connections[groupID][conn] = struct{}{}
-	log.Printf("websocket connected group_id=%s connections=%d", groupID, len(s.connections[groupID]))
+	message := chatMessage{
+		ID:        s.snowflake.Next(),
+		GroupID:   groupID,
+		UserID:    userID,
+		Email:     user.Email,
+		Content:   content,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return chatMessage{}, nil, err
+	}
+	if err := s.redis.RPush(context.Background(), messagesKey(groupID), payload).Err(); err != nil {
+		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.ID, err)
+		return chatMessage{}, nil, err
+	}
+	log.Printf("redis message stored group_id=%s message_id=%s user_id=%s", groupID, message.ID, userID)
+	return message, payload, nil
 }
 
-func (s *ChatService) removeConnection(groupID string, conn *websocket.Conn) {
-	s.connectionsMu.Lock()
-	defer s.connectionsMu.Unlock()
-	if groupConnections := s.connections[groupID]; groupConnections != nil {
-		delete(groupConnections, conn)
-		if len(groupConnections) == 0 {
-			delete(s.connections, groupID)
-		}
+func websocketMessageContent(event core.WSEvent) (string, error) {
+	if event.Content != "" {
+		return validateMessageContent(event.Content)
 	}
-	log.Printf("websocket disconnected group_id=%s", groupID)
+	data, err := json.Marshal(event.Data)
+	if err != nil {
+		return "", err
+	}
+	var message core.WSMessage
+	if err := json.Unmarshal(data, &message); err != nil {
+		return "", err
+	}
+	return validateMessageContent(message.Content)
 }
 
-func (s *ChatService) broadcast(groupID string, payload []byte) {
-	s.connectionsMu.Lock()
-	defer s.connectionsMu.Unlock()
-	for conn := range s.connections[groupID] {
-		if err := websocket.Message.Send(conn, string(payload)); err != nil {
-			log.Printf("websocket broadcast failed group_id=%s: %v", groupID, err)
-			_ = conn.Close()
-			delete(s.connections[groupID], conn)
-		}
+func validateMessageContent(value string) (string, error) {
+	content := strings.TrimSpace(value)
+	if content == "" || len([]rune(content)) > maxMessageLength {
+		return "", errors.New("invalid message content")
 	}
+	return content, nil
 }
 
 func currentUserID(c *gin.Context) string {

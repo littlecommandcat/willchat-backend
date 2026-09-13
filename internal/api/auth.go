@@ -23,13 +23,27 @@ var (
 	errRedisUnavailable   = errors.New("redis is unavailable")
 )
 
+const maxUsernameLength = 50
+
 type credentialsRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
 }
 
+type registerRequest struct {
+	Username string `json:"username" binding:"required,min=1,max=50"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
+}
+
+type updateProfileRequest struct {
+	Username *string `json:"username"`
+	Email    *string `json:"email" binding:"omitempty,email"`
+}
+
 type userResponse struct {
 	ID       string   `json:"id"`
+	Username string   `json:"username"`
 	Email    string   `json:"email"`
 	GroupIDs []string `json:"group_ids"`
 }
@@ -40,14 +54,17 @@ type tokenRecord struct {
 
 type redisUserRecord struct {
 	ID           string   `json:"id"`
+	Username     string   `json:"username"`
 	Email        string   `json:"email"`
 	PasswordHash string   `json:"password_hash"`
 	GroupIDs     []string `json:"group_ids"`
+	Token        string   `json:"token"`
 }
 
 type Service struct {
 	redis     *redis.Client
 	snowflake *core.Snowflake
+	hub       *core.Hub
 	mu        sync.RWMutex
 	users     map[string]core.UserData
 }
@@ -64,11 +81,17 @@ func NewService(redisClient *redis.Client, snowflake *core.Snowflake) (*Service,
 	return service, nil
 }
 
+func (s *Service) SetHub(hub *core.Hub) {
+	s.hub = hub
+}
+
 func (s *Service) Register(c *gin.Context) {
-	var request credentialsRequest
-	if !bindCredentials(c, &request) {
+	var request registerRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "username is required, email must be valid and password must be at least 8 characters")
 		return
 	}
+	request.Username = strings.TrimSpace(request.Username)
 	request.Email = normalizeEmail(request.Email)
 
 	s.mu.Lock()
@@ -83,8 +106,7 @@ func (s *Service) Register(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create user")
 		return
 	}
-	user := core.UserData{Id: s.snowflake.Next(), Email: request.Email, PasswordHash: string(hash), GroupIDs: []string{}}
-	s.users[user.Email] = user
+	user := core.UserData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash), GroupIDs: []string{}}
 
 	token, err := s.createToken(user.Id)
 	if err != nil {
@@ -92,6 +114,8 @@ func (s *Service) Register(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	user.Token = token
+	s.users[user.Email] = user
 	if err := s.storeUser(user); err != nil {
 		_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
 		delete(s.users, user.Email)
@@ -101,7 +125,7 @@ func (s *Service) Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"token": token,
-		"user":  userResponse{ID: user.Id, Email: user.Email, GroupIDs: user.GroupIDs},
+		"user":  toUserResponse(user),
 	}})
 }
 
@@ -119,20 +143,29 @@ func (s *Service) Login(c *gin.Context) {
 		writeError(c, http.StatusUnauthorized, "invalid_credentials", errInvalidCredentials.Error())
 		return
 	}
-	token, err := s.createToken(user.Id)
-	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-		return
-	}
-	if err := s.storeUser(user); err != nil {
-		_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-		return
+	token := user.Token
+	if token == "" || !s.tokenBelongsToUser(token, user.Id) {
+		var err error
+		token, err = s.createToken(user.Id)
+		if err != nil {
+			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			return
+		}
+		user.Token = token
+		s.mu.Lock()
+		s.users[request.Email] = user
+		storeErr := s.storeUser(user)
+		s.mu.Unlock()
+		if storeErr != nil {
+			_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
+			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"token": token,
-		"user":  userResponse{ID: user.Id, Email: user.Email, GroupIDs: user.GroupIDs},
+		"user":  toUserResponse(user),
 	}})
 }
 
@@ -146,6 +179,9 @@ func (s *Service) Logout(c *gin.Context) {
 	if err := s.redis.Del(context.Background(), tokenKey(tokenValue)).Err(); err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
+	}
+	if userID, ok := c.Get("user_id"); ok && s.hub != nil {
+		s.hub.CloseUser(userID.(string))
 	}
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success"})
 }
@@ -187,11 +223,85 @@ func (s *Service) Me(c *gin.Context) {
 	defer s.mu.RUnlock()
 	for _, user := range s.users {
 		if user.Id == userID {
-			c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: userResponse{ID: user.Id, Email: user.Email, GroupIDs: user.GroupIDs}})
+			c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: toUserResponse(user)})
 			return
 		}
 	}
 	writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+}
+
+func (s *Service) UpdateProfile(c *gin.Context) {
+	var request updateProfileRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "email must be valid and username must be provided")
+		return
+	}
+	if request.Username == nil && request.Email == nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "username or email is required")
+		return
+	}
+
+	userID, _ := c.Get("user_id")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var currentEmail string
+	var user core.UserData
+	for email, candidate := range s.users {
+		if candidate.Id == userID {
+			currentEmail = email
+			user = candidate
+			break
+		}
+	}
+	if currentEmail == "" {
+		writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+		return
+	}
+
+	if request.Username != nil {
+		username := strings.TrimSpace(*request.Username)
+		if username == "" || len([]rune(username)) > maxUsernameLength {
+			writeError(c, http.StatusBadRequest, "invalid_username", "username must be between 1 and 50 characters")
+			return
+		}
+		user.Username = username
+	}
+	newEmail := user.Email
+	if request.Email != nil {
+		newEmail = normalizeEmail(*request.Email)
+		if newEmail == "" {
+			writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
+			return
+		}
+		if existing, exists := s.users[newEmail]; exists && existing.Id != user.Id {
+			writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+			return
+		}
+		user.Email = newEmail
+	}
+
+	if err := s.storeUser(user); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if newEmail != currentEmail {
+		delete(s.users, currentEmail)
+	}
+	s.users[newEmail] = user
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: toUserResponse(user)})
+}
+
+func (s *Service) tokenBelongsToUser(token, userID string) bool {
+	value, err := s.redis.Get(context.Background(), tokenKey(token)).Result()
+	if err != nil {
+		return false
+	}
+	var record tokenRecord
+	return json.Unmarshal([]byte(value), &record) == nil && record.UserID == userID
+}
+
+func toUserResponse(user core.UserData) userResponse {
+	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupIDs: user.GroupIDs}
 }
 
 func (s *Service) createToken(userID string) (string, error) {
@@ -222,7 +332,7 @@ func (s *Service) createToken(userID string) (string, error) {
 
 func (s *Service) storeUser(user core.UserData) error {
 	key := userKey(user.Id)
-	payload, err := json.Marshal(redisUserRecord{ID: user.Id, Email: user.Email, PasswordHash: user.PasswordHash, GroupIDs: user.GroupIDs})
+	payload, err := json.Marshal(redisUserRecord{ID: user.Id, Username: user.Username, Email: user.Email, PasswordHash: user.PasswordHash, GroupIDs: user.GroupIDs, Token: user.Token})
 	if err != nil {
 		log.Printf("redis user marshal failed key=%s: %v", key, err)
 		return err
@@ -313,9 +423,11 @@ func (s *Service) loadUsers() error {
 			}
 			s.users[normalizedEmail] = core.UserData{
 				Id:           record.ID,
+				Username:     record.Username,
 				Email:        normalizedEmail,
 				PasswordHash: record.PasswordHash,
 				GroupIDs:     record.GroupIDs,
+				Token:        record.Token,
 			}
 			loaded++
 		}

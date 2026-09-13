@@ -14,6 +14,8 @@ func RedisClient() *redis.Client {
 		Addr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
 		Password: os.Getenv("REDIS_PASSWORD"),
 		DB:       envIntOrDefault("REDIS_DB", 0),
+
+		// TLSConfig: &tls.Config{},
 	})
 }
 

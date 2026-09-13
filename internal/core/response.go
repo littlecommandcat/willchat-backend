@@ -5,7 +5,8 @@ package core
 // )
 
 type Response struct {
-	Status string `json:"status"`
-	Code   string `json:"code"`
-	Data   any    `json:"data,omitempty"`
+	Status  string `json:"status"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }

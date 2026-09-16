@@ -190,7 +190,7 @@ func (s *Service) Logout(c *gin.Context) {
 	if userID, ok := c.Get("user_id"); ok && s.hub != nil {
 		s.hub.CloseUser(userID.(string))
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success"})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{}})
 }
 
 func (s *Service) RequireToken() gin.HandlerFunc {
@@ -233,7 +233,7 @@ func (s *Service) Me(c *gin.Context) {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: responseUser})
+		c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"user": responseUser}})
 		return
 	}
 	if !errors.Is(err, redis.Nil) {
@@ -303,7 +303,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: responseUser})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"user": responseUser}})
 }
 
 func (s *Service) ResetPassword(c *gin.Context) {

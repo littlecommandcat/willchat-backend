@@ -45,6 +45,7 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 					Status:  "error",
 					Code:    "too_many_requests",
 					Message: "Too many requests",
+					Data:    gin.H{"message": "Too many requests"},
 				},
 			)
 			return
@@ -70,6 +71,7 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 					Status:  "error",
 					Code:    "too_many_requests",
 					Message: "Too many requests",
+					Data:    gin.H{"message": "Too many requests"},
 				},
 			)
 			return

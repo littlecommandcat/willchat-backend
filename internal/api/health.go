@@ -13,5 +13,6 @@ func Health(c *gin.Context) {
 		Status:  "ok",
 		Code:    "success",
 		Message: "Service is online",
+		Data:    gin.H{"message": "Service is online"},
 	})
 }

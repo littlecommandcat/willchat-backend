@@ -21,6 +21,7 @@ import (
 const (
 	maxGroupNameLength = 100
 	maxMessageLength   = 4000
+	maxGetAmount       = 50
 	maxOwnedGroups     = 15
 )
 
@@ -42,6 +43,10 @@ type createGroupRequest struct {
 
 type sendMessageRequest struct {
 	Content string `json:"content" binding:"required"`
+}
+
+type getMessageRequest struct {
+	Amount int `form:"amount" binding:"required"`
 }
 
 type ChatService struct {
@@ -112,7 +117,7 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: group})
+	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": group}})
 }
 
 func (s *ChatService) GetGroup(c *gin.Context) {
@@ -130,7 +135,7 @@ func (s *ChatService) GetGroup(c *gin.Context) {
 	if group.GroupID == "" {
 		group.GroupID = groupID
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: group})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": group}})
 }
 
 func (s *ChatService) JoinGroup(c *gin.Context) {
@@ -314,7 +319,43 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		return
 	}
 	s.hub.Broadcast(groupID, core.WSEvent{Event: "message", GroupID: groupID, Data: message})
-	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: message})
+	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": message}})
+}
+
+func (s *ChatService) GetMessages(c *gin.Context) {
+	groupID := strings.TrimSpace(c.Param("group_id"))
+	userID := currentUserID(c)
+	var request getMessageRequest
+	if err := c.ShouldBindQuery(&request); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "amount is required")
+		return
+	}
+	amount := request.Amount
+	if amount <= 0 || amount > maxGetAmount {
+		writeError(c, http.StatusBadRequest, "invalid_request", "message amount must be between 1 and 50")
+		return
+	}
+
+	if _, err := s.getGroup(groupID); errors.Is(err, redis.Nil) {
+		writeError(c, http.StatusNotFound, "group_not_found", "group not found")
+		return
+	} else if err != nil {
+		log.Printf("redis group read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if !s.isMember(groupID, userID) {
+		writeError(c, http.StatusForbidden, "not_group_member", "user is not a member of this group")
+		return
+	}
+
+	messages, err := s.getMessages(groupID, amount)
+	if err != nil {
+		log.Printf("redis messages read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"messages": messages, "amount": amount}})
 }
 
 func (s *ChatService) WebSocket(c *gin.Context) {
@@ -446,6 +487,23 @@ func (s *ChatService) createMessage(groupID, userID, content string) (core.Messa
 	}
 	log.Printf("redis message stored group_id=%s message_id=%s user_id=%s", groupID, message.Id, userID)
 	return message, payload, nil
+}
+
+func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, error) {
+	values, err := s.redis.LRange(context.Background(), messagesKey(groupID), -int64(amount), -1).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	messages := make([]core.Message, 0, len(values))
+	for _, value := range values {
+		var message core.Message
+		if err := json.Unmarshal([]byte(value), &message); err != nil {
+			return nil, err
+		}
+		messages = append(messages, message)
+	}
+	return messages, nil
 }
 
 func validateMessageContent(value string) (string, error) {

@@ -6,13 +6,15 @@ import (
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
+
+	"willchat-backend/internal/core"
 )
 
 // RedisClient
 func RedisClient() *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:     envOrDefault("REDIS_ADDR", "localhost:6379"),
-		Password: os.Getenv("REDIS_PASSWORD"),
+		Addr:     core.XorDecipher(envOrDefault("REDIS_ADDR", "595a5654595d5a46410f0306020c"), 53),
+		Password: core.XorDecipher(os.Getenv("REDIS_PASSWORD"), 122),
 		DB:       envIntOrDefault("REDIS_DB", 0),
 
 		// TLSConfig: &tls.Config{},

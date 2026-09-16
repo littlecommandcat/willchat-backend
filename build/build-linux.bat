@@ -15,7 +15,8 @@ if %errorlevel% neq 0 (
 
 if not exist ..\bin (mkdir ..\bin & echo [Info] create ../bin)
 
-go build -ldflags="-s -w" -o ../bin/%APP_NAME%_linux_amd64 ../cmd/server
+@REM  go build -ldflags="-s -w" -o ../bin/%APP_NAME%_linux_amd64 ../cmd/server
+go build -o ../bin/%APP_NAME%_linux_amd64 ../cmd/server
 if %errorlevel% neq 0 (
     echo [Error] failed to build
     exit /b %errorlevel%

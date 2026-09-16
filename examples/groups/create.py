@@ -10,5 +10,4 @@ _, group_body = request(
     headers={"Authorization": f"Bearer {token}"},
     json={"name": "testgroup"},
 )
-group_id = group_body.get("data", {}).get("group_id", "") if isinstance(group_body, dict) else ""
-print("created group_id:", group_id)
+group_id = group_body.get("data", {}).get("group", {}).get("group_id", "") if isinstance(group_body, dict) else ""

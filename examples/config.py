@@ -1,4 +1,5 @@
 import os
+import json
 import requests
 
 
@@ -16,5 +17,7 @@ def request(method, path, **kwargs):
         body = response.json()
     except ValueError:
         body = response.text
-    print(method, path, response.status_code, body)
+    data = body.get("data", {}) if isinstance(body, dict) else body
+    print("status:", response.status_code)
+    print("data:", json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data)
     return response, body

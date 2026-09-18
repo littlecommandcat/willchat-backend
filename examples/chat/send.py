@@ -8,5 +8,5 @@ request(
     "POST",
     f"/groups/{GROUP_ID}/messages",
     headers={"Authorization": f"Bearer {token}"},
-    json={"content": "Hello from tests/chat/send.py"},
+    json={"content": "Hello Gay"},
 )

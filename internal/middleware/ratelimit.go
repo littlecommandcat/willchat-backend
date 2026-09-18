@@ -45,7 +45,7 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 					Status:  "error",
 					Code:    "too_many_requests",
 					Message: "Too many requests",
-					Data:    gin.H{"message": "Too many requests"},
+					Data:    gin.H{},
 				},
 			)
 			return
@@ -63,15 +63,16 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 			}
 		}
 
-		if len(recentIpTimes) >= max {
+		// Extra code
+		if len(recentIpTimes) >= (max * 3) {
 			mu.Unlock()
 			c.AbortWithStatusJSON(
 				http.StatusTooManyRequests,
 				core.Response{
 					Status:  "error",
 					Code:    "too_many_requests",
-					Message: "Too many requests",
-					Data:    gin.H{"message": "Too many requests"},
+					Message: "Global rate limit",
+					Data:    gin.H{},
 				},
 			)
 			return

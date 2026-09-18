@@ -19,5 +19,5 @@ def request(method, path, **kwargs):
         body = response.text
     data = body.get("data", {}) if isinstance(body, dict) else body
     print("status:", response.status_code)
-    print("data:", json.dumps(data, ensure_ascii=False, indent=2) if isinstance(data, (dict, list)) else data)
+    print("data:", body)
     return response, body

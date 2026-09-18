@@ -47,10 +47,11 @@ type resetPasswordRequest struct {
 }
 
 type userResponse struct {
-	ID       string   `json:"id"`
-	Username string   `json:"username"`
-	Email    string   `json:"email"`
-	GroupIDs []string `json:"group_ids"`
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	// GroupIDs     []string      `json:"group_ids"`
+	GroupRecords []groupRecord `json:"group_data"`
 }
 
 type tokenRecord struct {
@@ -403,7 +404,39 @@ func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
 	if err != nil {
 		return userResponse{}, err
 	}
-	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupIDs: groupIDs}, nil
+	groupData := make([]groupRecord, len(groupIDs))
+	for i := 0; i < len(groupIDs); i += 1 {
+		if groupIDs[i] == "" {
+			continue
+		}
+		group, err := s.getGroup(groupIDs[i])
+		if err != nil {
+			log.Fatal(err)
+			groupRe := groupRecord{
+				ID: groupIDs[i],
+			}
+			groupData = append(groupData, groupRe)
+			continue
+		}
+		log.Printf("ID: %s", groupIDs[i])
+		groupData = append(groupData, group)
+	}
+	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupRecords: groupData[1:]}, nil
+}
+
+func (s *Service) getGroup(groupID string) (groupRecord, error) {
+	value, err := s.redis.Get(context.Background(), groupKey(groupID)).Result()
+	if err != nil {
+		return groupRecord{}, err
+	}
+	var group groupRecord
+	if err := json.Unmarshal([]byte(value), &group); err != nil {
+		return groupRecord{}, err
+	}
+	if group.GroupID == "" {
+		group.GroupID = group.ID
+	}
+	return group, nil
 }
 
 func (s *Service) createToken(userID string) (string, error) {

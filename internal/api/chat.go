@@ -29,12 +29,13 @@ var errGroupLimitReached = errors.New("group limit reached")
 var errAlreadyGroupMember = errors.New("already a group member")
 var errUserNotFound = errors.New("user not found")
 
+// Maybe it failed to get data
 type groupRecord struct {
 	GroupID   string `json:"group_id"`
-	ID        string `json:"id,omitempty"` // legacy Redis records
-	Name      string `json:"name"`
-	OwnerID   string `json:"owner_id"`
-	CreatedAt string `json:"created_at"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	OwnerID   string `json:"owner_id,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 type createGroupRequest struct {

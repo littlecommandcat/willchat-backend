@@ -177,22 +177,7 @@ func (s *Service) Login(c *gin.Context) {
 	}})
 }
 
-func (s *Service) Logout(c *gin.Context) {
-	token, ok := c.Get("token")
-	tokenValue, validType := token.(string)
-	if !ok || !validType || tokenValue == "" {
-		writeError(c, http.StatusUnauthorized, "missing_token", "a bearer token is required")
-		return
-	}
-	if err := s.redis.Del(context.Background(), tokenKey(tokenValue)).Err(); err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-		return
-	}
-	if userID, ok := c.Get("user_id"); ok && s.hub != nil {
-		s.hub.CloseUser(userID.(string))
-	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{}})
-}
+// I dont think  we need logout route if we have websocket
 
 func (s *Service) RequireToken() gin.HandlerFunc {
 	return func(c *gin.Context) {

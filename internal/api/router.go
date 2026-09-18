@@ -41,7 +41,9 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	protectedRoutes.PUT("/me", middleware.RateLimit(5, 10*time.Second), authService.UpdateProfile)
 
 	// Auth but verify token
-	protectedRoutes.POST("/logout", middleware.RateLimit(5, 10*time.Second), authService.Logout)
+
+	// I dont know why I write this route
+	// protectedRoutes.POST("/logout", middleware.RateLimit(5, 10*time.Second), authService.Logout)
 	protectedRoutes.POST("/reset", middleware.RateLimit(5, 10*time.Second), authService.ResetPassword)
 
 	// Group

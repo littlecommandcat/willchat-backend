@@ -13,9 +13,10 @@ import (
 
 	"willchat-backend/internal/core"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/net/websocket"
 )
 
 const (
@@ -378,34 +379,39 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 		return
 	}
 
-	websocket.Server{
-		Handler: websocket.Handler(func(conn *websocket.Conn) {
-			client := s.hub.Register(userID, "")
-			log.Printf("Websocket connected: %s", userID)
-			defer s.hub.Unregister(client)
-			defer conn.Close()
+	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		log.Printf("WebSocket accept failed: %v", err)
+		return
+	}
+	defer conn.CloseNow()
 
-			go func() {
-				for payload := range client.Send {
-					if err := websocket.Message.Send(conn, string(payload)); err != nil {
-						_ = conn.Close()
-						return
-					}
-				}
-				_ = conn.Close()
-			}()
+	client := s.hub.Register(userID, "")
+	log.Printf("Websocket connected: %s", userID)
+	defer s.hub.Unregister(client)
 
-			for {
-				var incoming any
-				if err := websocket.JSON.Receive(conn, &incoming); err != nil {
-					return
-				}
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	go func() {
+		for payload := range client.Send {
+			if err := wsjson.Write(ctx, conn, json.RawMessage(payload)); err != nil {
+				cancel()
+				return
 			}
-		}),
-		Handshake: func(*websocket.Config, *http.Request) error {
-			return nil
-		},
-	}.ServeHTTP(c.Writer, c.Request)
+		}
+		cancel()
+	}()
+
+	for {
+		var incoming any
+		if err := wsjson.Read(ctx, conn, &incoming); err != nil {
+			cancel()
+			return
+		}
+	}
 }
 
 func (s *ChatService) storeGroup(group groupRecord) error {

@@ -3,10 +3,10 @@ module willchat-backend
 go 1.26.5
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/gin-gonic/gin v1.12.0
 	github.com/redis/go-redis/v9 v9.22.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
 )
 
 require (

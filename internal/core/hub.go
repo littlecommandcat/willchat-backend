@@ -5,17 +5,6 @@ import (
 	"sync"
 )
 
-type WSEvent struct {
-	Event   string `json:"event"`
-	GroupID string `json:"groupid"`
-	Data    any    `json:"data,omitempty"`
-	Content string `json:"content,omitempty"`
-}
-
-type WSMessage struct {
-	Content string `json:"content"`
-}
-
 type Client struct {
 	UserID  string
 	GroupID string

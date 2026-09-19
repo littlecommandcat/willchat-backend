@@ -30,27 +30,6 @@ var errGroupLimitReached = errors.New("group limit reached")
 var errAlreadyGroupMember = errors.New("already a group member")
 var errUserNotFound = errors.New("user not found")
 
-// Maybe it failed to get data
-type groupRecord struct {
-	GroupID   string `json:"group_id"`
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	OwnerID   string `json:"owner_id,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
-}
-
-type createGroupRequest struct {
-	Name string `json:"name" binding:"required"`
-}
-
-type sendMessageRequest struct {
-	Content string `json:"content" binding:"required"`
-}
-
-type getMessageRequest struct {
-	Amount int `form:"amount" binding:"required"`
-}
-
 type ChatService struct {
 	redis     *redis.Client
 	snowflake *core.Snowflake

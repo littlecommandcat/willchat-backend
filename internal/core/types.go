@@ -17,3 +17,21 @@ type Message struct {
 	Id       string `json:"id"`
 	AuthorId int    `json:"authorid"`
 }
+
+type Response struct {
+	Status  string         `json:"status"`
+	Code    string         `json:"code"`
+	Message string         `json:"message"`
+	Data    map[string]any `json:"data" binding:"omitempty"`
+}
+
+type WSEvent struct {
+	Event   string `json:"event"`
+	GroupID string `json:"groupid"`
+	Data    any    `json:"data,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
+type WSMessage struct {
+	Content string `json:"content"`
+}

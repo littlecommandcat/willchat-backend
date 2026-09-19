@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -26,7 +27,10 @@ func NewSnowflake(workerID int64) *Snowflake {
 	if workerID < 0 || workerID > maxWorkerID {
 		workerID = 1
 	}
-	return &Snowflake{workerID: workerID}
+
+	return &Snowflake{
+		workerID: workerID,
+	}
 }
 
 func (s *Snowflake) Next() string {
@@ -34,11 +38,14 @@ func (s *Snowflake) Next() string {
 	defer s.mu.Unlock()
 
 	timestamp := time.Now().UnixMilli() - snowflakeEpoch
+
 	if timestamp < s.lastTimestamp {
 		timestamp = s.lastTimestamp
 	}
+
 	if timestamp == s.lastTimestamp {
 		s.sequence = (s.sequence + 1) & maxSequence
+
 		if s.sequence == 0 {
 			for timestamp <= s.lastTimestamp {
 				timestamp = time.Now().UnixMilli() - snowflakeEpoch
@@ -47,10 +54,29 @@ func (s *Snowflake) Next() string {
 	} else {
 		s.sequence = 0
 	}
+
 	s.lastTimestamp = timestamp
 
 	id := (timestamp << (workerBits + sequenceBits)) |
 		(s.workerID << sequenceBits) |
 		s.sequence
+
 	return strconv.FormatInt(id, 10)
+}
+
+// ToTime
+func (s *Snowflake) ToTime(snowflakeStr string) (int64, error) {
+	snowflakeID, err := strconv.ParseInt(snowflakeStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+
+	relativeMillis := snowflakeID >> (workerBits + sequenceBits)
+	absoluteMillis := relativeMillis + snowflakeEpoch
+
+	if absoluteMillis < snowflakeEpoch {
+		return 0, fmt.Errorf("invalid snowflake ID: timestamp before epoch")
+	}
+
+	return absoluteMillis, nil
 }

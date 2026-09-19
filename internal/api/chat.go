@@ -145,7 +145,7 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 		return
 	}
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   "member_join",
+		Event:   core.WSEventEnum.JoinGroup,
 		GroupID: groupID,
 		Data: gin.H{
 			"group_id": groupID,
@@ -198,7 +198,7 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		return
 	}
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   "member_leave",
+		Event:   core.WSEventEnum.LeaveGroup,
 		GroupID: groupID,
 		Data: gin.H{
 			"group_id": groupID,
@@ -256,7 +256,7 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 	}
 
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   "group_delete",
+		Event:   core.WSEventEnum.DeleteGroup,
 		GroupID: groupID,
 		Data: gin.H{
 			"group_id": groupID,
@@ -299,7 +299,7 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	s.hub.Broadcast(groupID, core.WSEvent{Event: "message", GroupID: groupID, Data: message})
+	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, GroupID: groupID, Data: message})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": message}})
 }
 
@@ -458,10 +458,16 @@ func (s *ChatService) createMessage(groupID, userID, content string) (core.Messa
 	if err != nil {
 		return core.Message{}, nil, err
 	}
+	id := s.snowflake.Next()
+	timestamp, _ := s.snowflake.ToTime(id)
+
+	// Set msgType for test
 	message := core.Message{
-		Id:       s.snowflake.Next(),
-		AuthorId: authorID,
-		Content:  content,
+		Id:        id,
+		AuthorId:  authorID,
+		Timestamp: timestamp,
+		Content:   content,
+		Type:      core.MessageTypeEnum.Normal,
 	}
 	payload, err := json.Marshal(message)
 	if err != nil {

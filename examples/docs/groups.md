@@ -55,7 +55,7 @@ Response
 
 - 200
 - ```json
-    data: {"status": "ok", "code": "success", "message": "", "data": {"group": {"group_id": "gr-889382555894157312", "name": "testgroup", "owner_id": "888612806851563520", "created_at": "2026-09-18T03:03:43.9178159Z"}}}
+    data: {"status": "ok", "code": "success", "message": "", "data": {"group": {"group_id": "gr-889496926997712896", "name": "testgroup", "owner_id": "888612806851563520", "created_at": "1789909477240"}}}
     ```
 
 ## members-join

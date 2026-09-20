@@ -15,7 +15,7 @@ Response
 
 - 200
 - ```json
-    {"status": "ok", "code": "success", "message": "", "data": {"token": token, "member": {"id": "mr-888612806851563520", "username": "testtest1", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "2026-09-18T03:03:43.9178159Z"}]}}}
+    {"status": "ok", "code": "success", "message": "", "data": {"token": token, "member": {"id": "mr-888612806851563520", "username": "testtest1", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "1789909477240"}]}}}
     ```
 
 ## register
@@ -62,7 +62,7 @@ Request
 Response
 - 200
 - ```json
-    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "updated-test-user", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "2026-09-18T03:03:43.9178159Z"}]}}}
+    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "updated-test-user", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "1789909477240"}]}}}
     ```
 
 # me
@@ -79,7 +79,7 @@ Request
 Response
 - 200
 - ```json
-    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "testtest1", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "2026-09-18T03:03:43.9178159Z"}]}}}
+    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "testtest1", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "1789909477240"}]}}}
     ```
 
 ## profile
@@ -100,5 +100,5 @@ Request
 Response
 - 200
 - ```json
-    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "updated-test-user", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "2026-09-18T03:03:43.9178159Z"}]}}}
+    {"status": "ok", "code": "success", "message": "", "data": {"member": {"id": "mr-888612806851563520", "username": "updated-test-user", "email": "testtest1@gmail.com", "group_data": [{"group_id": "gr-888621284110372864", "name": "testgroup", "owner_id": "mr-888612806851563520", "created_at": "1789909477240"}]}}}
     ```

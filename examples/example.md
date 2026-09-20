@@ -47,6 +47,7 @@ python auth\login.py
 | Method | Path | Example |
 |---|---|---|
 | POST | `/groups/:group_id/messages` | `chat/send.py` |
+| POST | `/groups/:group_id/messages`（multipart 圖片 + reply_to） | `chat/send_attachment.py` |
 | GET | `/groups/:group_id/messages?amount=20` | `chat/get.py` |
 
 ### WebSocket

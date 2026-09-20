@@ -71,7 +71,7 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 	}
 
 	group := groupRecord{
-		GroupID:   s.snowflake.Next(),
+		GroupID:   s.snowflake.ToGroupID(s.snowflake.Next()),
 		Name:      name,
 		OwnerID:   userID,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -464,7 +464,7 @@ func (s *ChatService) createMessage(groupID, userID, content string) (core.Messa
 	// Set msgType for test
 	message := core.Message{
 		Id:        id,
-		AuthorId:  authorID,
+		AuthorId:  s.snowflake.ToMemberID(strconv.Itoa(authorID)),
 		Timestamp: timestamp,
 		Content:   content,
 		Type:      core.MessageTypeEnum.Normal,

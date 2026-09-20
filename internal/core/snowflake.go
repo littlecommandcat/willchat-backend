@@ -8,11 +8,13 @@ import (
 )
 
 const (
-	snowflakeEpoch int64 = 1577836800000
-	workerBits           = 10
-	sequenceBits         = 12
-	maxWorkerID    int64 = (1 << workerBits) - 1
-	maxSequence    int64 = (1 << sequenceBits) - 1
+	snowflakeEpoch int64  = 1577836800000
+	workerBits            = 10
+	sequenceBits          = 12
+	maxWorkerID    int64  = (1 << workerBits) - 1
+	maxSequence    int64  = (1 << sequenceBits) - 1
+	memberPrefix   string = "mr-"
+	groupPrefix    string = "gr-"
 )
 
 // Snowflake
@@ -79,4 +81,16 @@ func (s *Snowflake) ToTime(snowflakeStr string) (int64, error) {
 	}
 
 	return absoluteMillis, nil
+}
+
+// ToMemberID
+func (s *Snowflake) ToMemberID(snowflakeStr string) string {
+	result := memberPrefix + snowflakeStr
+	return result
+}
+
+// ToGroupID
+func (s *Snowflake) ToGroupID(snowflakeStr string) string {
+	result := groupPrefix + snowflakeStr
+	return result
 }

@@ -68,7 +68,7 @@ func (s *Service) Register(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create user")
 		return
 	}
-	user := core.UserData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash)}
+	user := core.UserData{Id: s.snowflake.ToMemberID(s.snowflake.Next()), Username: request.Username, Email: request.Email, PasswordHash: string(hash)}
 
 	token, err := s.createToken(user.Id)
 	if err != nil {

@@ -3,6 +3,12 @@ package core
 type MessageType int
 type wsEventType string
 
+const (
+	eventMessageType string = "message_"
+	eventGroupType   string = "group_"
+	eventMemberType  string = "member_"
+)
+
 type messageTypeEnum struct {
 	Normal MessageType
 	Dev    MessageType
@@ -23,12 +29,17 @@ type eventType struct {
 }
 
 var WSEventEnum = eventType{
-	SendMessage:   "send_message",
-	DeleteMessage: "delete_message",
-	ProfileUpdate: "update_profile",
-	JoinGroup:     "join_group",
-	LeaveGroup:    "leave_group",
-	DeleteGroup:   "delete_group",
+	// Message
+	SendMessage:   wsEventType(eventMessageType + "send"),
+	DeleteMessage: wsEventType(eventMessageType + "delete"),
+
+	// Member
+	ProfileUpdate: wsEventType(eventMemberType + "update"),
+
+	// Group
+	JoinGroup:   wsEventType(eventGroupType + "join"),
+	LeaveGroup:  wsEventType(eventGroupType + "leave"),
+	DeleteGroup: wsEventType(eventGroupType + "delete"),
 }
 
 type UserData struct {
@@ -46,7 +57,7 @@ type TokenData struct {
 type Message struct {
 	Content   string      `json:"content"`
 	Id        string      `json:"id"`
-	AuthorId  int         `json:"authorid"`
+	AuthorId  string      `json:"authorid"`
 	Timestamp int64       `json:"timestamp"`
 	Type      MessageType `json:"type"`
 }

@@ -1,5 +1,7 @@
 package api
 
+import "willchat-backend/internal/core"
+
 // Auth requests
 
 type credentialsRequest struct {
@@ -25,19 +27,26 @@ type resetPasswordRequest struct {
 
 // Auth responses and records
 
-type userResponse struct {
+type memberResponse struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	// GroupIDs     []string      `json:"group_ids"`
-	GroupRecords []groupRecord `json:"group_data"`
+	GroupRecords []groupResponse `json:"group_data"`
+}
+
+// memberProfile is the public view of a member returned by member endpoints.
+type memberProfile struct {
+	ID        string `json:"id"`
+	Username  string `json:"username"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type tokenRecord struct {
-	UserID string `json:"user_id"`
+	MemberID string `json:"member_id"`
 }
 
-type redisUserRecord struct {
+type redisMemberRecord struct {
 	ID           string `json:"id"`
 	Username     string `json:"username"`
 	Email        string `json:"email"`
@@ -53,7 +62,7 @@ type groupRecord struct {
 	ID        string `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	OwnerID   string `json:"owner_id,omitempty"`
-	CreatedAt string `json:"created_at,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
 }
 
 type createGroupRequest struct {
@@ -66,4 +75,22 @@ type sendMessageRequest struct {
 
 type getMessageRequest struct {
 	Amount int `form:"amount" binding:"required"`
+}
+
+// External (HTTP boundary) representations. Internal records keep raw snowflake
+// IDs; these add the mr-/gr- prefixes before data leaves the server.
+
+type groupResponse struct {
+	GroupID   string `json:"group_id"`
+	Name      string `json:"name,omitempty"`
+	OwnerID   string `json:"owner_id,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
+}
+
+type messageResponse struct {
+	Content   string           `json:"content"`
+	Id        string           `json:"id"`
+	AuthorId  string           `json:"authorid"`
+	Timestamp int64            `json:"timestamp"`
+	Type      core.MessageType `json:"type"`
 }

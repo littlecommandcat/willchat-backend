@@ -40,6 +40,7 @@ python auth\login.py
 | DELETE | `/groups/:group_id` | `groups/delete.py` |
 | POST | `/groups/:group_id/members` | `groups/join.py` |
 | DELETE | `/groups/:group_id/members` | `groups/leave.py` |
+| GET | `/groups/:group_id/members/:member_id` | `groups/get_member.py` |
 
 ### Chat
 

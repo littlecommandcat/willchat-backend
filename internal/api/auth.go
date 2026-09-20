@@ -55,7 +55,7 @@ func (s *Service) Register(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.userByEmail(request.Email); err == nil {
+	if _, err := s.memberByEmail(request.Email); err == nil {
 		writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
 		return
 	} else if !errors.Is(err, redis.Nil) {
@@ -65,31 +65,31 @@ func (s *Service) Register(c *gin.Context) {
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create user")
+		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create member")
 		return
 	}
-	user := core.UserData{Id: s.snowflake.ToMemberID(s.snowflake.Next()), Username: request.Username, Email: request.Email, PasswordHash: string(hash)}
+	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash)}
 
-	token, err := s.createToken(user.Id)
+	token, err := s.createToken(member.Id)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	user.Token = token
-	if err := s.storeUser(user); err != nil {
+	member.Token = token
+	if err := s.storeMember(member); err != nil {
 		_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
 
-	responseUser, err := s.toUserResponse(user)
+	responseMember, err := s.toMemberResponse(member)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"token": token,
-		"user":  responseUser,
+		"token":  token,
+		"member": responseMember,
 	}})
 }
 
@@ -100,24 +100,24 @@ func (s *Service) Login(c *gin.Context) {
 	}
 	request.Email = normalizeEmail(request.Email)
 
-	user, err := s.userByEmail(request.Email)
+	member, err := s.memberByEmail(request.Email)
 	if err != nil && !errors.Is(err, redis.Nil) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	if errors.Is(err, redis.Nil) || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(request.Password)) != nil {
+	if errors.Is(err, redis.Nil) || bcrypt.CompareHashAndPassword([]byte(member.PasswordHash), []byte(request.Password)) != nil {
 		writeError(c, http.StatusUnauthorized, "invalid_credentials", errInvalidCredentials.Error())
 		return
 	}
-	token := user.Token
-	if token == "" || !s.tokenBelongsToUser(token, user.Id) {
-		token, err = s.createToken(user.Id)
+	token := member.Token
+	if token == "" || !s.tokenBelongsToMember(token, member.Id) {
+		token, err = s.createToken(member.Id)
 		if err != nil {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		user.Token = token
-		storeErr := s.storeUser(user)
+		member.Token = token
+		storeErr := s.storeMember(member)
 		if storeErr != nil {
 			_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
@@ -125,14 +125,14 @@ func (s *Service) Login(c *gin.Context) {
 		}
 	}
 
-	responseUser, err := s.toUserResponse(user)
+	responseMember, err := s.toMemberResponse(member)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"token": token,
-		"user":  responseUser,
+		"token":  token,
+		"member": responseMember,
 	}})
 }
 
@@ -158,34 +158,34 @@ func (s *Service) RequireToken() gin.HandlerFunc {
 			return
 		}
 		var currentToken tokenRecord
-		if json.Unmarshal([]byte(value), &currentToken) != nil || currentToken.UserID == "" {
+		if json.Unmarshal([]byte(value), &currentToken) != nil || currentToken.MemberID == "" {
 			writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
 			c.Abort()
 			return
 		}
 		c.Set("token", token)
-		c.Set("user_id", currentToken.UserID)
+		c.Set("member_id", currentToken.MemberID)
 		c.Next()
 	}
 }
 
 func (s *Service) Me(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	user, err := s.userByID(userID.(string))
+	memberID, _ := c.Get("member_id")
+	member, err := s.memberByID(memberID.(string))
 	if err == nil {
-		responseUser, responseErr := s.toUserResponse(user)
+		responseMember, responseErr := s.toMemberResponse(member)
 		if responseErr != nil {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"user": responseUser}})
+		c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 		return
 	}
 	if !errors.Is(err, redis.Nil) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+	writeError(c, http.StatusNotFound, "member_not_found", "member not found")
 }
 
 func (s *Service) UpdateProfile(c *gin.Context) {
@@ -199,16 +199,16 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	userID, _ := c.Get("user_id")
+	memberID, _ := c.Get("member_id")
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	user, err := s.userByID(userID.(string))
+	member, err := s.memberByID(memberID.(string))
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+		writeError(c, http.StatusNotFound, "member_not_found", "member not found")
 		return
 	}
 
@@ -218,17 +218,17 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "invalid_username", "username must be between 1 and 50 characters")
 			return
 		}
-		user.Username = username
+		member.Username = username
 	}
-	newEmail := user.Email
+	newEmail := member.Email
 	if request.Email != nil {
 		newEmail = normalizeEmail(*request.Email)
 		if newEmail == "" {
 			writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
 			return
 		}
-		if existing, err := s.userByEmail(newEmail); err == nil {
-			if existing.Id != user.Id {
+		if existing, err := s.memberByEmail(newEmail); err == nil {
+			if existing.Id != member.Id {
 				writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
 				return
 			}
@@ -236,19 +236,19 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		user.Email = newEmail
+		member.Email = newEmail
 	}
 
-	if err := s.storeUser(user); err != nil {
+	if err := s.storeMember(member); err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	responseUser, responseErr := s.toUserResponse(user)
+	responseMember, responseErr := s.toMemberResponse(member)
 	if responseErr != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"user": responseUser}})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 }
 
 func (s *Service) ResetPassword(c *gin.Context) {
@@ -266,13 +266,13 @@ func (s *Service) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	userID, ok := c.Get("user_id")
+	memberID, ok := c.Get("member_id")
 	if !ok {
 		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
 		return
 	}
-	userIDValue, ok := userID.(string)
-	if !ok || strings.TrimSpace(userIDValue) == "" {
+	memberIDValue, ok := memberID.(string)
+	if !ok || strings.TrimSpace(memberIDValue) == "" {
 		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
 		return
 	}
@@ -289,17 +289,17 @@ func (s *Service) ResetPassword(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	user, err := s.userByID(userIDValue)
+	member, err := s.memberByID(memberIDValue)
 	if err != nil {
 		if !errors.Is(err, redis.Nil) {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
 		}
-		writeError(c, http.StatusNotFound, "user_not_found", "user not found")
+		writeError(c, http.StatusNotFound, "member_not_found", "member not found")
 		return
 	}
 
-	if !s.tokenBelongsToUser(oldTokenValue, user.Id) {
+	if !s.tokenBelongsToMember(oldTokenValue, member.Id) {
 		writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
 		return
 	}
@@ -310,14 +310,14 @@ func (s *Service) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	newToken, err := s.createToken(user.Id)
+	newToken, err := s.createToken(member.Id)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	user.PasswordHash = string(hash)
-	user.Token = newToken
-	if err := s.storeUser(user); err != nil {
+	member.PasswordHash = string(hash)
+	member.Token = newToken
+	if err := s.storeMember(member); err != nil {
 		_ = s.redis.Del(context.Background(), tokenKey(newToken)).Err()
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
@@ -327,28 +327,28 @@ func (s *Service) ResetPassword(c *gin.Context) {
 		return
 	}
 	if s.hub != nil {
-		s.hub.CloseUser(user.Id)
+		s.hub.CloseMember(member.Id)
 	}
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"token": newToken,
 	}})
 }
 
-func (s *Service) tokenBelongsToUser(token, userID string) bool {
+func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 	value, err := s.redis.Get(context.Background(), tokenKey(token)).Result()
 	if err != nil {
 		return false
 	}
 	var record tokenRecord
-	return json.Unmarshal([]byte(value), &record) == nil && record.UserID == userID
+	return json.Unmarshal([]byte(value), &record) == nil && record.MemberID == memberID
 }
 
-func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
-	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(user.Id)).Result()
+func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, error) {
+	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(member.Id)).Result()
 	if err != nil {
-		return userResponse{}, err
+		return memberResponse{}, err
 	}
-	groupData := make([]groupRecord, 0, len(groupIDs))
+	groupData := make([]groupResponse, 0, len(groupIDs))
 	for i := 0; i < len(groupIDs); i += 1 {
 		if groupIDs[i] == "" {
 			continue
@@ -359,9 +359,9 @@ func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
 			continue
 		}
 		log.Printf("ID: %s", groupIDs[i])
-		groupData = append(groupData, group)
+		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
-	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupRecords: groupData}, nil
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
@@ -379,10 +379,10 @@ func (s *Service) getGroup(groupID string) (groupRecord, error) {
 	return group, nil
 }
 
-func (s *Service) createToken(userID string) (string, error) {
+func (s *Service) createToken(memberID string) (string, error) {
 	token := newToken()
 	key := tokenKey(token)
-	payload, err := json.Marshal(tokenRecord{UserID: userID})
+	payload, err := json.Marshal(tokenRecord{MemberID: memberID})
 	if err != nil {
 		log.Printf("redis token marshal failed key=%s: %v", key, err)
 		return "", err
@@ -401,53 +401,53 @@ func (s *Service) createToken(userID string) (string, error) {
 		log.Printf("redis token read-back mismatch key=%s", key)
 		return "", errors.New("redis token verification failed")
 	}
-	log.Printf("redis token stored user_id=%s", userID)
+	log.Printf("redis token stored member_id=%s", memberID)
 	return token, nil
 }
 
-func (s *Service) storeUser(user core.UserData) error {
-	key := userKey(user.Id)
-	payload, err := json.Marshal(redisUserRecord{ID: user.Id, Username: user.Username, Email: user.Email, PasswordHash: user.PasswordHash, Token: user.Token})
+func (s *Service) storeMember(member core.MemberData) error {
+	key := memberKey(member.Id)
+	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token})
 	if err != nil {
-		log.Printf("redis user marshal failed key=%s: %v", key, err)
+		log.Printf("redis member marshal failed key=%s: %v", key, err)
 		return err
 	}
 	if err := s.redis.Set(context.Background(), key, payload, 0).Err(); err != nil {
-		log.Printf("redis user write failed key=%s: %v", key, err)
+		log.Printf("redis member write failed key=%s: %v", key, err)
 		return err
 	}
 	storedPayload, err := s.redis.Get(context.Background(), key).Result()
 	if err != nil {
-		log.Printf("redis user read-back failed key=%s: %v", key, err)
+		log.Printf("redis member read-back failed key=%s: %v", key, err)
 		return err
 	}
 	if storedPayload != string(payload) {
-		log.Printf("redis user read-back mismatch key=%s", key)
-		return errors.New("redis user verification failed")
+		log.Printf("redis member read-back mismatch key=%s", key)
+		return errors.New("redis member verification failed")
 	}
-	log.Printf("redis user stored key=%s", key)
+	log.Printf("redis member stored key=%s", key)
 	return nil
 }
 
-func (s *Service) canCreateGroup(userID string) (bool, error) {
-	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(userID)).Result()
+func (s *Service) canCreateGroup(memberID string) (bool, error) {
+	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(memberID)).Result()
 	if err != nil {
 		return false, err
 	}
 	return count < maxOwnedGroups, nil
 }
 
-func (s *Service) addOwnedGroup(userID, groupID string) error {
+func (s *Service) addOwnedGroup(memberID, groupID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(userID)).Result()
+	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(memberID)).Result()
 	if err != nil {
 		return err
 	}
 	if count >= maxOwnedGroups {
 		return errGroupLimitReached
 	}
-	return s.redis.SAdd(context.Background(), ownedGroupsKey(userID), groupID).Err()
+	return s.redis.SAdd(context.Background(), ownedGroupsKey(memberID), groupID).Err()
 }
 
 func bindCredentials(c *gin.Context, request *credentialsRequest) bool {
@@ -469,7 +469,7 @@ func bearerToken(c *gin.Context) (string, bool) {
 }
 
 func tokenKey(token string) string       { return "token:" + token }
-func userKey(userID string) string       { return "user:" + userID }
+func memberKey(memberID string) string   { return "member:" + memberID }
 func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
 func newToken() string {

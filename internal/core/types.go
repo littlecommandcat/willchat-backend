@@ -42,7 +42,7 @@ var WSEventEnum = eventType{
 	DeleteGroup: wsEventType(eventGroupType + "delete"),
 }
 
-type UserData struct {
+type MemberData struct {
 	Id           string `json:"id"`
 	Username     string `json:"username"`
 	Email        string `json:"email"`

@@ -1,8 +1,8 @@
 package core
 
 import (
-	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -67,30 +67,48 @@ func (s *Snowflake) Next() string {
 }
 
 // ToTime
-func (s *Snowflake) ToTime(snowflakeStr string) (int64, error) {
+func (s *Snowflake) ToTime(snowflakeStr string) int64 {
 	snowflakeID, err := strconv.ParseInt(snowflakeStr, 10, 64)
 	if err != nil {
-		return 0, err
+		return 0 // , err
 	}
 
 	relativeMillis := snowflakeID >> (workerBits + sequenceBits)
 	absoluteMillis := relativeMillis + snowflakeEpoch
 
 	if absoluteMillis < snowflakeEpoch {
-		return 0, fmt.Errorf("invalid snowflake ID: timestamp before epoch")
+		return 0 // , fmt.Errorf("invalid snowflake ID: timestamp before epoch")
 	}
 
-	return absoluteMillis, nil
+	return absoluteMillis // , nil
 }
 
 // ToMemberID
 func (s *Snowflake) ToMemberID(snowflakeStr string) string {
-	result := memberPrefix + snowflakeStr
-	return result
+	if snowflakeStr == "" {
+		return ""
+	}
+	if strings.HasPrefix(snowflakeStr, memberPrefix) {
+		return snowflakeStr
+	}
+	return memberPrefix + snowflakeStr
 }
 
 // ToGroupID
 func (s *Snowflake) ToGroupID(snowflakeStr string) string {
-	result := groupPrefix + snowflakeStr
-	return result
+	if snowflakeStr == "" {
+		return ""
+	}
+	if strings.HasPrefix(snowflakeStr, groupPrefix) {
+		return snowflakeStr
+	}
+	return groupPrefix + snowflakeStr
+}
+
+// ToSnowflake
+func (s *Snowflake) ToSnowflake(externalID string) string {
+	id := strings.TrimSpace(externalID)
+	id = strings.TrimPrefix(id, memberPrefix)
+	id = strings.TrimPrefix(id, groupPrefix)
+	return id
 }

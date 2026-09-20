@@ -41,5 +41,5 @@ Response
 
 - 201
 - ```json
-    {"status": "ok", "code": "success", "message": "", "data": {"message": {"content": "Hello Gay", "id": "888633491028185088", "authorid": 888612806851563520}}}
+    {"status": "ok", "code": "success", "message": "", "data": {"message": {"content": "Hello Gay", "id": "888633491028185088", "authorid": "mr-888612806851563520"}}}
     ```

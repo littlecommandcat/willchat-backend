@@ -53,6 +53,7 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	protected.DELETE("/:group_id", middleware.RateLimit(5, 10*time.Second), chatService.DeleteGroup)
 	protected.POST("/:group_id/members", middleware.RateLimit(5, 10*time.Second), chatService.JoinGroup)
 	protected.DELETE("/:group_id/members", middleware.RateLimit(5, 10*time.Second), chatService.LeaveGroup)
+	protected.GET("/:group_id/members/:member_id", middleware.RateLimit(10, 5*time.Second), chatService.GetMember)
 	protected.POST("/:group_id/messages", middleware.RateLimit(10, 10*time.Second), chatService.SendMessage)
 	protected.GET("/:group_id/messages", middleware.RateLimit(10, 5*time.Second), chatService.GetMessages)
 

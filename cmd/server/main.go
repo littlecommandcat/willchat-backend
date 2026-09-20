@@ -25,7 +25,7 @@ func main() {
 
 	router, err := api.Router(redisClient)
 	if err != nil {
-		log.Fatalf("redis user loading failed: %v", err)
+		log.Fatalf("redis member loading failed: %v", err)
 	}
 	if err := router.Run(":" + adr); err != nil {
 		log.Fatal(err)

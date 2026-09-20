@@ -110,7 +110,7 @@ func (s *Service) Login(c *gin.Context) {
 		return
 	}
 	token := member.Token
-	if token == "" || !s.tokenBelongsToMember(token, member.Id) {
+	if core.SafeCompare(token, "") || !s.tokenBelongsToMember(token, member.Id) {
 		token, err = s.createToken(member.Id)
 		if err != nil {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
@@ -214,7 +214,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 
 	if request.Username != nil {
 		username := strings.TrimSpace(*request.Username)
-		if username == "" || len([]rune(username)) > maxUsernameLength {
+		if core.SafeCompare(username, "") || len([]rune(username)) > maxUsernameLength {
 			writeError(c, http.StatusBadRequest, "invalid_username", "username must be between 1 and 50 characters")
 			return
 		}
@@ -223,7 +223,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 	newEmail := member.Email
 	if request.Email != nil {
 		newEmail = normalizeEmail(*request.Email)
-		if newEmail == "" {
+		if core.SafeCompare(newEmail, "") {
 			writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
 			return
 		}

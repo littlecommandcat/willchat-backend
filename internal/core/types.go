@@ -3,6 +3,23 @@ package core
 type MessageType int
 type wsEventType string
 
+// Attachment
+type Attachment struct {
+	Id       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
+	Size     int    `json:"size"`
+}
+
+// ReplyTo snapshot
+type ReplyTo struct {
+	Id       string      `json:"id"`
+	AuthorId string      `json:"authorid"`
+	Content  string      `json:"content"`
+	Type     MessageType `json:"type"`
+}
+
 const (
 	eventMessageType string = "message_"
 	eventGroupType   string = "group_"
@@ -10,13 +27,15 @@ const (
 )
 
 type messageTypeEnum struct {
-	Normal MessageType
-	Dev    MessageType
+	Normal    MessageType
+	Reference MessageType
+	Dev       MessageType
 }
 
 var MessageTypeEnum = messageTypeEnum{
-	Normal: 0,
-	Dev:    1,
+	Normal:    0,
+	Reference: 1,
+	Dev:       2,
 }
 
 type eventType struct {
@@ -55,11 +74,13 @@ type TokenData struct {
 }
 
 type Message struct {
-	Content   string      `json:"content"`
-	Id        string      `json:"id"`
-	AuthorId  string      `json:"authorid"`
-	Timestamp int64       `json:"timestamp"`
-	Type      MessageType `json:"type"`
+	Content     string       `json:"content"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+	ReplyTo     *ReplyTo     `json:"reply_to,omitempty"`
+	Id          string       `json:"id"`
+	AuthorId    string       `json:"authorid"`
+	Timestamp   int64        `json:"timestamp"`
+	Type        MessageType  `json:"type"`
 }
 
 type Response struct {

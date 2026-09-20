@@ -35,7 +35,7 @@ type memberResponse struct {
 	GroupRecords []groupResponse `json:"group_data"`
 }
 
-// memberProfile is the public view of a member returned by member endpoints.
+// memberProfile
 type memberProfile struct {
 	ID        string `json:"id"`
 	Username  string `json:"username"`
@@ -55,8 +55,7 @@ type redisMemberRecord struct {
 }
 
 // Chat requests and records
-
-// Maybe it failed to get data
+// Maybe it failed to get data (idk)
 type groupRecord struct {
 	GroupID   string `json:"group_id"`
 	ID        string `json:"id,omitempty"`
@@ -70,15 +69,21 @@ type createGroupRequest struct {
 }
 
 type sendMessageRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content string `json:"content"`
+	// ReplyTo
+	ReplyTo string `json:"reply_to"`
+	// Attachments base64-encoded
+	Attachments []attachmentRequest `json:"attachments"`
+}
+
+// attachmentRequest
+type attachmentRequest struct {
+	Data string `json:"data"`
 }
 
 type getMessageRequest struct {
 	Amount int `form:"amount" binding:"required"`
 }
-
-// External (HTTP boundary) representations. Internal records keep raw snowflake
-// IDs; these add the mr-/gr- prefixes before data leaves the server.
 
 type groupResponse struct {
 	GroupID   string `json:"group_id"`
@@ -88,9 +93,29 @@ type groupResponse struct {
 }
 
 type messageResponse struct {
-	Content   string           `json:"content"`
-	Id        string           `json:"id"`
-	AuthorId  string           `json:"authorid"`
-	Timestamp int64            `json:"timestamp"`
-	Type      core.MessageType `json:"type"`
+	Content     string               `json:"content"`
+	Attachments []attachmentResponse `json:"attachments,omitempty"`
+	ReplyTo     *replyToResponse     `json:"reply_to,omitempty"`
+	Id          string               `json:"id"`
+	AuthorId    string               `json:"authorid"`
+	Timestamp   int64                `json:"timestamp"`
+	Type        core.MessageType     `json:"type"`
+}
+
+// attachmentResponse
+type attachmentResponse struct {
+	Id       string `json:"id"`
+	MimeType string `json:"mime_type"`
+	Width    int    `json:"width,omitempty"`
+	Height   int    `json:"height,omitempty"`
+	Size     int    `json:"size"`
+	Data     string `json:"data"`
+}
+
+// replyToResponse
+type replyToResponse struct {
+	Id       string           `json:"id"`
+	AuthorId string           `json:"authorid"`
+	Content  string           `json:"content"`
+	Type     core.MessageType `json:"type"`
 }

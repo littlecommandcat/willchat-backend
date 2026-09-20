@@ -17,7 +17,7 @@ func ProxyChecker() gin.HandlerFunc {
 		remoteAddr := c.Request.RemoteAddr
 		forwardedFor := c.GetHeader("X-Forwarded-For")
 		log.Printf("Get remoteAddr: %s  forwardedFor: %s", remoteAddr, forwardedFor)
-		if remoteAddr == forwardedFor {
+		if core.SafeCompare(remoteAddr, forwardedFor) {
 			mu.Unlock()
 			c.AbortWithStatusJSON(
 				http.StatusForbidden,

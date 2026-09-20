@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"sync"
@@ -27,6 +30,7 @@ const (
 
 var errGroupLimitReached = errors.New("group limit reached")
 var errAlreadyGroupMember = errors.New("already a group member")
+var errMessageNotFound = errors.New("message not found")
 
 type ChatService struct {
 	redis     *redis.Client
@@ -247,12 +251,22 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 		return
 	}
 
+	attachmentKeys, err := s.groupAttachmentKeys(groupID)
+	if err != nil {
+		log.Printf("redis message read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
 	if _, err := s.redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		for _, groupMemberID := range members {
 			pipe.SRem(ctx, memberGroupsKey(groupMemberID), groupID)
 		}
 		pipe.SRem(ctx, ownedGroupsKey(memberID), groupID)
 		pipe.Del(ctx, groupKey(groupID), groupMembersKey(groupID), messagesKey(groupID))
+		if len(attachmentKeys) > 0 {
+			pipe.Del(ctx, attachmentKeys...)
+		}
 		return nil
 	}); err != nil {
 		log.Printf("redis group deletion failed group_id=%s: %v", groupID, err)
@@ -276,14 +290,19 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 func (s *ChatService) SendMessage(c *gin.Context) {
 	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
 	memberID := currentMemberID(c)
-	var request sendMessageRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		writeError(c, http.StatusBadRequest, "invalid_request", "content is required")
+
+	request, err := parseSendMessageRequest(c)
+	if err != nil {
+		writeSendMessageError(c, err)
 		return
 	}
-	content := strings.TrimSpace(request.Content)
-	if content == "" || len([]rune(content)) > maxMessageLength {
-		writeError(c, http.StatusBadRequest, "invalid_message", "message content must be between 1 and 4000 characters")
+	content, err := validateMessageContent(request.Content)
+	if err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_message", "message content must be at most 4000 characters")
+		return
+	}
+	if content == "" && len(request.Attachments) == 0 {
+		writeError(c, http.StatusBadRequest, "invalid_message", "message must contain content or at least one attachment")
 		return
 	}
 
@@ -296,12 +315,38 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		return
 	}
 
-	message, _, err := s.createMessage(groupID, memberID, content)
+	var replyTo *core.ReplyTo
+	if request.ReplyToID != "" {
+		original, err := s.findMessage(groupID, s.snowflake.ToSnowflake(request.ReplyToID))
+		switch {
+		case errors.Is(err, errMessageNotFound):
+			writeError(c, http.StatusBadRequest, "reply_message_not_found", "the message being replied to was not found")
+			return
+		case err != nil:
+			log.Printf("redis message read failed group_id=%s message_id=%s: %v", groupID, request.ReplyToID, err)
+			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			return
+		}
+		replyTo = &core.ReplyTo{Id: original.Id, AuthorId: original.AuthorId, Content: original.Content, Type: original.Type}
+	}
+
+	attachments, err := s.storeAttachments(request.Attachments)
 	if err != nil {
+		if errors.Is(err, errUnsupportedImage) {
+			writeError(c, http.StatusBadRequest, "invalid_attachment", err.Error())
+			return
+		}
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	responseMessage := toMessageResponse(s.snowflake, message)
+
+	message, _, err := s.createMessage(groupID, memberID, content, attachments, replyTo)
+	if err != nil {
+		s.deleteAttachments(attachments)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	responseMessage := s.toMessageResponse(message)
 	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, GroupID: s.snowflake.ToGroupID(groupID), Data: responseMessage})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage}})
 }
@@ -341,7 +386,7 @@ func (s *ChatService) GetMessages(c *gin.Context) {
 	}
 	messageResponses := make([]messageResponse, 0, len(messages))
 	for _, message := range messages {
-		messageResponses = append(messageResponses, toMessageResponse(s.snowflake, message))
+		messageResponses = append(messageResponses, s.toMessageResponse(message))
 	}
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"messages": messageResponses, "amount": amount}})
 }
@@ -390,8 +435,7 @@ func (s *ChatService) GetMember(c *gin.Context) {
 	}})
 }
 
-// toGroupResponse converts an internal group record (raw snowflake IDs) into
-// its external representation with the mr-/gr- prefixes.
+// toGroupResponse
 func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse {
 	response := groupResponse{Name: group.Name, CreatedAt: group.CreatedAt}
 	if group.GroupID != "" {
@@ -403,9 +447,8 @@ func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse
 	return response
 }
 
-// toMessageResponse converts an internal message (raw snowflake IDs) into its
-// external representation, prefixing the member ID of the author.
-func toMessageResponse(snowflake *core.Snowflake, message core.Message) messageResponse {
+// toMessageResponse
+func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 	response := messageResponse{
 		Content:   message.Content,
 		Id:        message.Id,
@@ -413,14 +456,38 @@ func toMessageResponse(snowflake *core.Snowflake, message core.Message) messageR
 		Type:      message.Type,
 	}
 	if message.AuthorId != "" {
-		response.AuthorId = snowflake.ToMemberID(message.AuthorId)
+		response.AuthorId = s.snowflake.ToMemberID(message.AuthorId)
+	}
+	for _, attachment := range message.Attachments {
+		external := attachmentResponse{
+			Id:       attachment.Id,
+			MimeType: attachment.MimeType,
+			Width:    attachment.Width,
+			Height:   attachment.Height,
+			Size:     attachment.Size,
+		}
+		data, err := s.loadAttachment(attachment.Id)
+		if err == nil {
+			external.Data = base64.StdEncoding.EncodeToString(data)
+		} else if !errors.Is(err, redis.Nil) {
+			log.Printf("redis attachment read failed attachment_id=%s: %v", attachment.Id, err)
+		}
+		response.Attachments = append(response.Attachments, external)
+	}
+	if message.ReplyTo != nil {
+		response.ReplyTo = &replyToResponse{
+			Id:       message.ReplyTo.Id,
+			AuthorId: s.snowflake.ToMemberID(message.ReplyTo.AuthorId),
+			Content:  message.ReplyTo.Content,
+			Type:     message.ReplyTo.Type,
+		}
 	}
 	return response
 }
 
 func (s *ChatService) WebSocket(c *gin.Context) {
 	token := strings.TrimSpace(c.Query("token"))
-	if token == "" {
+	if core.SafeCompare(token, "") {
 		if headerToken, ok := bearerToken(c); ok {
 			token = headerToken
 		}
@@ -429,7 +496,7 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 	if !ok {
 		code := "invalid_token"
 		message := "token is invalid"
-		if token == "" {
+		if core.SafeCompare(token, "") {
 			code = "missing_token"
 			message = "a bearer token is required"
 		}
@@ -532,17 +599,19 @@ func (s *ChatService) isMember(groupID, memberID string) bool {
 	return err == nil && isGroupMember
 }
 
-func (s *ChatService) createMessage(groupID, memberID, content string) (core.Message, []byte, error) {
+func (s *ChatService) createMessage(groupID, memberID, content string, attachments []core.Attachment, replyTo *core.ReplyTo) (core.Message, []byte, error) {
 	id := s.snowflake.Next()
 	// timestamp :=
 
 	// Set msgType for test
 	message := core.Message{
-		Id:        id,
-		AuthorId:  memberID,
-		Timestamp: s.snowflake.ToTime(id),
-		Content:   content,
-		Type:      core.MessageTypeEnum.Normal,
+		Id:          id,
+		AuthorId:    memberID,
+		Timestamp:   s.snowflake.ToTime(id),
+		Content:     content,
+		Attachments: attachments,
+		ReplyTo:     replyTo,
+		Type:        core.MessageTypeEnum.Normal,
 	}
 	payload, err := json.Marshal(message)
 	if err != nil {
@@ -552,8 +621,74 @@ func (s *ChatService) createMessage(groupID, memberID, content string) (core.Mes
 		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.Id, err)
 		return core.Message{}, nil, err
 	}
-	log.Printf("redis message stored group_id=%s message_id=%s member_id=%s", groupID, message.Id, memberID)
+	log.Printf("redis message stored group_id=%s message_id=%s member_id=%s attachments=%d reply_to=%v", groupID, message.Id, memberID, len(attachments), replyTo != nil)
 	return message, payload, nil
+}
+
+// storeAttachments compresses
+func (s *ChatService) storeAttachments(images [][]byte) ([]core.Attachment, error) {
+	attachments := make([]core.Attachment, 0, len(images))
+	for _, raw := range images {
+		// I think it's a good idea?
+		compressed, mimeType, width, height, err := compressImage(raw, 1024)
+		if err != nil {
+			s.deleteAttachments(attachments)
+			return nil, err
+		}
+		attachment, err := s.storeAttachment(compressed, mimeType, width, height)
+		if err != nil {
+			s.deleteAttachments(attachments)
+			return nil, err
+		}
+		attachments = append(attachments, attachment)
+	}
+	return attachments, nil
+}
+
+func (s *ChatService) storeAttachment(data []byte, mimeType string, width, height int) (core.Attachment, error) {
+	id := s.snowflake.Next()
+	attachment := core.Attachment{Id: id, MimeType: mimeType, Width: width, Height: height, Size: len(data)}
+	if err := s.redis.Set(context.Background(), attachmentKey(id), data, 0).Err(); err != nil {
+		return core.Attachment{}, err
+	}
+	return attachment, nil
+}
+
+func (s *ChatService) loadAttachment(attachmentID string) ([]byte, error) {
+	return s.redis.Get(context.Background(), attachmentKey(attachmentID)).Bytes()
+}
+
+func (s *ChatService) deleteAttachments(attachments []core.Attachment) {
+	if len(attachments) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		keys = append(keys, attachmentKey(attachment.Id))
+	}
+	if err := s.redis.Del(context.Background(), keys...).Err(); err != nil {
+		log.Printf("redis attachment cleanup failed ids=%v: %v", keys, err)
+	}
+}
+
+// groupAttachmentKeys collects the storage keys of every attachment referenced
+// by the group history, so they can be removed together with the group.
+func (s *ChatService) groupAttachmentKeys(groupID string) ([]string, error) {
+	values, err := s.redis.LRange(context.Background(), messagesKey(groupID), 0, -1).Result()
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0)
+	for _, value := range values {
+		var message core.Message
+		if err := json.Unmarshal([]byte(value), &message); err != nil {
+			continue
+		}
+		for _, attachment := range message.Attachments {
+			keys = append(keys, attachmentKey(attachment.Id))
+		}
+	}
+	return keys, nil
 }
 
 func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, error) {
@@ -573,12 +708,135 @@ func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, e
 	return messages, nil
 }
 
+// validateMessageContent
 func validateMessageContent(value string) (string, error) {
 	content := strings.TrimSpace(value)
-	if content == "" || len([]rune(content)) > maxMessageLength {
+	if len([]rune(content)) > maxMessageLength {
 		return "", errors.New("invalid message content")
 	}
 	return content, nil
+}
+
+// findMessage scans
+func (s *ChatService) findMessage(groupID, messageID string) (core.Message, error) {
+	values, err := s.redis.LRange(context.Background(), messagesKey(groupID), 0, -1).Result()
+	if err != nil {
+		return core.Message{}, err
+	}
+	for _, value := range values {
+		var message core.Message
+		if err := json.Unmarshal([]byte(value), &message); err != nil {
+			return core.Message{}, err
+		}
+		if message.Id == messageID {
+			return message, nil
+		}
+	}
+	return core.Message{}, errMessageNotFound
+}
+
+// sendMessageInput
+type sendMessageInput struct {
+	Content     string
+	ReplyToID   string
+	Attachments [][]byte
+}
+
+// parseSendMessageRequest
+func parseSendMessageRequest(c *gin.Context) (sendMessageInput, error) {
+	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
+		return parseMultipartMessage(c)
+	}
+	var request sendMessageRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		return sendMessageInput{}, err
+	}
+	if len(request.Attachments) > maxAttachmentsPerMessage {
+		return sendMessageInput{}, errTooManyAttachments
+	}
+	input := sendMessageInput{Content: request.Content, ReplyToID: strings.TrimSpace(request.ReplyTo)}
+	for _, attachment := range request.Attachments {
+		data, err := decodeBase64Image(attachment.Data)
+		if err != nil {
+			return sendMessageInput{}, err
+		}
+		if len(data) > maxAttachmentBytes {
+			return sendMessageInput{}, errAttachmentTooLarge
+		}
+		input.Attachments = append(input.Attachments, data)
+	}
+	return input, nil
+}
+
+func parseMultipartMessage(c *gin.Context) (sendMessageInput, error) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxMessageFormBytes)
+	if err := c.Request.ParseMultipartForm(maxMultipartMemory); err != nil {
+		return sendMessageInput{}, err
+	}
+	defer c.Request.MultipartForm.RemoveAll()
+
+	files := c.Request.MultipartForm.File["attachments"]
+	if len(files) > maxAttachmentsPerMessage {
+		return sendMessageInput{}, errTooManyAttachments
+	}
+	input := sendMessageInput{
+		Content:   c.Request.FormValue("content"),
+		ReplyToID: strings.TrimSpace(c.Request.FormValue("reply_to")),
+	}
+	for _, header := range files {
+		data, err := readUpload(header, maxAttachmentBytes)
+		if err != nil {
+			return sendMessageInput{}, err
+		}
+		input.Attachments = append(input.Attachments, data)
+	}
+	return input, nil
+}
+
+func readUpload(header *multipart.FileHeader, limit int64) ([]byte, error) {
+	file, err := header.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, errAttachmentTooLarge
+	}
+	return data, nil
+}
+
+// decodeBase64Image
+func decodeBase64Image(value string) ([]byte, error) {
+	payload := strings.TrimSpace(value)
+	if index := strings.Index(payload, ","); strings.HasPrefix(payload, "data:") && index != -1 {
+		payload = payload[index+1:]
+	}
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return nil, errUnsupportedImage
+	}
+	return data, nil
+}
+
+// writeSendMessageError maps
+func writeSendMessageError(c *gin.Context, err error) {
+	var maxBytesError *http.MaxBytesError
+	switch {
+	case errors.As(err, &maxBytesError):
+		writeError(c, http.StatusRequestEntityTooLarge, "attachment_too_large", "attachments must not exceed 25 MB in total")
+	case errors.Is(err, errTooManyAttachments):
+		writeError(c, http.StatusBadRequest, "too_many_attachments", "a message can have at most 4 attachments")
+	case errors.Is(err, errAttachmentTooLarge):
+		writeError(c, http.StatusBadRequest, "attachment_too_large", "each image must be 5 MB or smaller")
+	case errors.Is(err, errUnsupportedImage):
+		writeError(c, http.StatusBadRequest, "invalid_attachment", err.Error())
+	default:
+		writeError(c, http.StatusBadRequest, "invalid_request", "request body is invalid")
+	}
 }
 
 func currentMemberID(c *gin.Context) string {
@@ -618,7 +876,7 @@ func (s *Service) memberByEmail(email string) (core.MemberData, error) {
 			if err != nil {
 				return core.MemberData{}, err
 			}
-			if member.Email == normalizeEmail(email) {
+			if core.SafeCompare(member.Email, normalizeEmail(email)) {
 				return member, nil
 			}
 		}
@@ -649,8 +907,9 @@ func (s *Service) validateToken(token string) (string, bool) {
 	return current.MemberID, true
 }
 
-func groupKey(groupID string) string         { return "group:" + groupID }
-func groupMembersKey(groupID string) string  { return "group:" + groupID + ":members" }
-func memberGroupsKey(memberID string) string { return "member:" + memberID + ":groups" }
-func ownedGroupsKey(memberID string) string  { return "member:" + memberID + ":owned-groups" }
-func messagesKey(groupID string) string      { return "group:" + groupID + ":messages" }
+func groupKey(groupID string) string           { return "group:" + groupID }
+func groupMembersKey(groupID string) string    { return "group:" + groupID + ":members" }
+func memberGroupsKey(memberID string) string   { return "member:" + memberID + ":groups" }
+func ownedGroupsKey(memberID string) string    { return "member:" + memberID + ":owned-groups" }
+func messagesKey(groupID string) string        { return "group:" + groupID + ":messages" }
+func attachmentKey(attachmentID string) string { return "attachment:" + attachmentID }

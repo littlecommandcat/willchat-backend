@@ -1,6 +1,8 @@
 package core
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"strings"
 )
@@ -17,4 +19,16 @@ func XorDecipher(hexStr string, key int) string {
 	}
 
 	return builder.String()
+}
+
+// SafeCompare
+func SafeCompare(input, target string) bool {
+	inputByte := []byte(input)
+	targetByte := []byte(target)
+	inputHash := sha256.Sum256(inputByte)
+	targetHash := sha256.Sum256(targetByte)
+	if subtle.ConstantTimeCompare(inputHash[:], targetHash[:]) == 1 {
+		return true
+	}
+	return false
 }

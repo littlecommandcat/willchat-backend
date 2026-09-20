@@ -355,11 +355,7 @@ func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
 		}
 		group, err := s.getGroup(groupIDs[i])
 		if err != nil {
-			log.Fatal(err)
-			groupRe := groupRecord{
-				ID: groupIDs[i],
-			}
-			groupData = append(groupData, groupRe)
+			log.Printf("getGroup %s failed: %v", groupIDs[i], err)
 			continue
 		}
 		log.Printf("ID: %s", groupIDs[i])

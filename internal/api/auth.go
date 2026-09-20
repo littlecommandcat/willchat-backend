@@ -348,7 +348,7 @@ func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
 	if err != nil {
 		return userResponse{}, err
 	}
-	groupData := make([]groupRecord, len(groupIDs))
+	groupData := make([]groupRecord, 0, len(groupIDs))
 	for i := 0; i < len(groupIDs); i += 1 {
 		if groupIDs[i] == "" {
 			continue
@@ -361,7 +361,7 @@ func (s *Service) toUserResponse(user core.UserData) (userResponse, error) {
 		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, group)
 	}
-	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupRecords: groupData[1:]}, nil
+	return userResponse{ID: user.Id, Username: user.Username, Email: user.Email, GroupRecords: groupData}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {

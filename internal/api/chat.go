@@ -88,7 +88,10 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 	if err := s.auth.addOwnedGroup(userID, group.GroupID); err != nil {
-		_ = s.redis.Del(context.Background(), groupKey(group.GroupID), groupMembersKey(group.GroupID), userGroupsKey(userID), ownedGroupsKey(userID)).Err()
+		ctx := context.Background()
+		_ = s.redis.Del(ctx, groupKey(group.GroupID), groupMembersKey(group.GroupID)).Err()
+		_ = s.redis.SRem(ctx, userGroupsKey(userID), group.GroupID).Err()
+		_ = s.redis.SRem(ctx, ownedGroupsKey(userID), group.GroupID).Err()
 		log.Printf("redis user group write failed group_id=%s user_id=%s: %v", group.GroupID, userID, err)
 		if errors.Is(err, errGroupLimitReached) {
 			writeError(c, http.StatusConflict, "group_limit_reached", "a user can create at most 15 groups")

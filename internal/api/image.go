@@ -10,6 +10,8 @@ import (
 
 	_ "image/gif"
 	_ "image/png"
+
+	xdraw "golang.org/x/image/draw"
 )
 
 const (
@@ -17,8 +19,11 @@ const (
 	maxMessageFormBytes      = 25 << 20
 	maxAttachmentsPerMessage = 4
 	maxImageDimension        = 1080
-	jpegQuality              = 80
-	minJPEGQuality           = 30
+	jpegQuality              = 90
+	minJPEGQuality           = 60
+	minShortEdge             = 360
+	minTargetBytes           = 100 * 1024
+	maxTargetBytes           = 512 * 1024
 	maxMultipartMemory       = 32 << 20
 )
 
@@ -27,6 +32,23 @@ var (
 	errAttachmentTooLarge = errors.New("attachment is too large")
 	errTooManyAttachments = errors.New("too many attachments")
 )
+
+// targetKBForRaw returns the per-image output budget for the
+// quality-first 1/5 plan: raw/5 clamped to [100KB, 512KB].
+func targetKBForRaw(rawLen int) int {
+	target := rawLen / 5
+	if target < minTargetBytes {
+		target = minTargetBytes
+	}
+	if target > maxTargetBytes {
+		target = maxTargetBytes
+	}
+	kb := target / 1024
+	if kb <= 0 {
+		kb = 1
+	}
+	return kb
+}
 
 // compressImage
 func compressImage(data []byte, maxKB int) ([]byte, string, int, int, error) {
@@ -77,24 +99,37 @@ func compressImage(data []byte, maxKB int) ([]byte, string, int, int, error) {
 
 	maxBytes := maxKB * 1024
 
-	for quality := jpegQuality; quality >= minJPEGQuality; quality -= 5 {
-		result, err := encodeJPEG(flattened, quality)
-		if err != nil {
-			return nil, "", 0, 0, err
+	tryEncode := func(img image.Image) ([]byte, bool) {
+		for quality := jpegQuality; quality >= minJPEGQuality; quality -= 5 {
+			result, err := encodeJPEG(img, quality)
+			if err != nil {
+				return nil, false
+			}
+			if len(result) <= maxBytes {
+				return result, true
+			}
 		}
-
-		if len(result) <= maxBytes {
-			return result, "image/jpeg",
-				flattened.Bounds().Dx(),
-				flattened.Bounds().Dy(),
-				nil
-		}
+		return nil, false
 	}
 
-	// Quality
+	if result, ok := tryEncode(flattened); ok {
+		return result, "image/jpeg",
+			flattened.Bounds().Dx(),
+			flattened.Bounds().Dy(),
+			nil
+	}
+
 	current := flattened
 
 	for current.Bounds().Dx() > 1 || current.Bounds().Dy() > 1 {
+		short := current.Bounds().Dx()
+		if current.Bounds().Dy() < short {
+			short = current.Bounds().Dy()
+		}
+		if short < minShortEdge {
+			break
+		}
+
 		width := current.Bounds().Dx() * 80 / 100
 		height := current.Bounds().Dy() * 80 / 100
 
@@ -106,22 +141,16 @@ func compressImage(data []byte, maxKB int) ([]byte, string, int, int, error) {
 			height = 1
 		}
 
-		current = resizeRGBA(current, width, height)
+		current = scaleRGBA(current, width, height)
 
-		for quality := jpegQuality; quality >= minJPEGQuality; quality -= 5 {
-			result, err := encodeJPEG(current, quality)
-			if err != nil {
-				return nil, "", 0, 0, err
-			}
-
-			if len(result) <= maxBytes {
-				return result, "image/jpeg",
-					current.Bounds().Dx(),
-					current.Bounds().Dy(),
-					nil
-			}
+		if result, ok := tryEncode(current); ok {
+			return result, "image/jpeg",
+				current.Bounds().Dx(),
+				current.Bounds().Dy(),
+				nil
 		}
 	}
+
 	result, err := encodeJPEG(current, minJPEGQuality)
 	if err != nil {
 		return nil, "", 0, 0, err
@@ -150,55 +179,16 @@ func encodeJPEG(img image.Image, quality int) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-// resizeRGBA
-func resizeRGBA(src *image.RGBA, width, height int) *image.RGBA {
-	srcBounds := src.Bounds()
-
+// scaleRGBA high-quality resample via CatmullRom.
+func scaleRGBA(src *image.RGBA, width, height int) *image.RGBA {
 	dst := image.NewRGBA(image.Rect(0, 0, width, height))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
+	return dst
+}
 
-	for dy := 0; dy < height; dy++ {
-		yStart := srcBounds.Min.Y + dy*srcBounds.Dy()/height
-		yEnd := srcBounds.Min.Y + (dy+1)*srcBounds.Dy()/height
-
-		if yEnd <= yStart {
-			yEnd = yStart + 1
-		}
-
-		for dx := 0; dx < width; dx++ {
-			xStart := srcBounds.Min.X + dx*srcBounds.Dx()/width
-			xEnd := srcBounds.Min.X + (dx+1)*srcBounds.Dx()/width
-
-			if xEnd <= xStart {
-				xEnd = xStart + 1
-			}
-
-			var red, green, blue, alpha, count uint64
-
-			for y := yStart; y < yEnd; y++ {
-				for x := xStart; x < xEnd; x++ {
-					pixel := src.RGBAAt(x, y)
-
-					red += uint64(pixel.R)
-					green += uint64(pixel.G)
-					blue += uint64(pixel.B)
-					alpha += uint64(pixel.A)
-					count++
-				}
-			}
-
-			dst.SetRGBA(
-				dx,
-				dy,
-				color.RGBA{
-					R: uint8(red / count),
-					G: uint8(green / count),
-					B: uint8(blue / count),
-					A: uint8(alpha / count),
-				},
-			)
-		}
-	}
-
+func scaleNRGBA(src *image.NRGBA, width, height int) *image.NRGBA {
+	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), draw.Over, nil)
 	return dst
 }
 
@@ -228,50 +218,5 @@ func downscale(src *image.NRGBA, maxDimension int) *image.NRGBA {
 		height = 1
 	}
 
-	dst := image.NewNRGBA(image.Rect(0, 0, width, height))
-
-	for dy := 0; dy < height; dy++ {
-		yStart := bounds.Min.Y + dy*bounds.Dy()/height
-		yEnd := bounds.Min.Y + (dy+1)*bounds.Dy()/height
-
-		if yEnd <= yStart {
-			yEnd = yStart + 1
-		}
-
-		for dx := 0; dx < width; dx++ {
-			xStart := bounds.Min.X + dx*bounds.Dx()/width
-			xEnd := bounds.Min.X + (dx+1)*bounds.Dx()/width
-
-			if xEnd <= xStart {
-				xEnd = xStart + 1
-			}
-
-			var red, green, blue, alpha, count uint64
-
-			for y := yStart; y < yEnd; y++ {
-				for x := xStart; x < xEnd; x++ {
-					pixel := src.NRGBAAt(x, y)
-
-					red += uint64(pixel.R)
-					green += uint64(pixel.G)
-					blue += uint64(pixel.B)
-					alpha += uint64(pixel.A)
-					count++
-				}
-			}
-
-			dst.SetNRGBA(
-				dx,
-				dy,
-				color.NRGBA{
-					R: uint8(red / count),
-					G: uint8(green / count),
-					B: uint8(blue / count),
-					A: uint8(alpha / count),
-				},
-			)
-		}
-	}
-
-	return dst
+	return scaleNRGBA(src, width, height)
 }

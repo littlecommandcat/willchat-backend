@@ -1,10 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"image"
 	"io"
 	"log"
 	"mime/multipart"
@@ -14,6 +18,9 @@ import (
 	"time"
 
 	"willchat-backend/internal/core"
+
+	_ "image/gif"
+	_ "image/png"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
@@ -629,13 +636,7 @@ func (s *ChatService) createMessage(groupID, memberID, content string, attachmen
 func (s *ChatService) storeAttachments(images [][]byte) ([]core.Attachment, error) {
 	attachments := make([]core.Attachment, 0, len(images))
 	for _, raw := range images {
-		// I think it's a good idea?
-		compressed, mimeType, width, height, err := compressImage(raw, 1024)
-		if err != nil {
-			s.deleteAttachments(attachments)
-			return nil, err
-		}
-		attachment, err := s.storeAttachment(compressed, mimeType, width, height)
+		attachment, err := s.storeOneImage(raw)
 		if err != nil {
 			s.deleteAttachments(attachments)
 			return nil, err
@@ -643,6 +644,74 @@ func (s *ChatService) storeAttachments(images [][]byte) ([]core.Attachment, erro
 		attachments = append(attachments, attachment)
 	}
 	return attachments, nil
+}
+
+func (s *ChatService) storeOneImage(raw []byte) (core.Attachment, error) {
+	ctx := context.Background()
+	rawSum := imageHash(raw)
+
+	if record, ok := s.attachmentByHash(ctx, rawSum); ok {
+		if data, err := s.loadAttachment(record.Id); err == nil {
+			attachment, err := s.storeAttachment(data, record.MimeType, record.Width, record.Height)
+			if err != nil {
+				return core.Attachment{}, err
+			}
+			s.rememberImage(ctx, rawSum, attachment, data)
+			return attachment, nil
+		}
+	}
+
+	if s.isOwnOutput(ctx, rawSum) {
+		if config, format, err := image.DecodeConfig(bytes.NewReader(raw)); err == nil && format == "jpeg" {
+			attachment, err := s.storeAttachment(raw, "image/jpeg", config.Width, config.Height)
+			if err != nil {
+				return core.Attachment{}, err
+			}
+			s.rememberImage(ctx, rawSum, attachment, raw)
+			return attachment, nil
+		}
+	}
+
+	compressed, mimeType, width, height, err := compressImage(raw, targetKBForRaw(len(raw)))
+	if err != nil {
+		return core.Attachment{}, err
+	}
+	attachment, err := s.storeAttachment(compressed, mimeType, width, height)
+	if err != nil {
+		return core.Attachment{}, err
+	}
+	s.rememberImage(ctx, rawSum, attachment, compressed)
+	return attachment, nil
+}
+
+// attachmentByHash returns the first attachment stored for raw bytes
+// with the given SHA-256 hex digest.
+func (s *ChatService) attachmentByHash(ctx context.Context, rawSum string) (core.Attachment, bool) {
+	value, err := s.redis.Get(ctx, attachmentRawKey(rawSum)).Bytes()
+	if err != nil {
+		return core.Attachment{}, false
+	}
+	var record core.Attachment
+	if err := json.Unmarshal(value, &record); err != nil || record.Id == "" {
+		return core.Attachment{}, false
+	}
+	return record, true
+}
+
+func (s *ChatService) isOwnOutput(ctx context.Context, sum string) bool {
+	return s.redis.Exists(ctx, attachmentOutKey(sum)).Val() == 1
+}
+
+func (s *ChatService) rememberImage(ctx context.Context, rawSum string, attachment core.Attachment, compressed []byte) {
+	if payload, err := json.Marshal(attachment); err == nil {
+		_ = s.redis.Set(ctx, attachmentRawKey(rawSum), payload, 0).Err()
+	}
+	_ = s.redis.Set(ctx, attachmentOutKey(imageHash(compressed)), "1", 0).Err()
+}
+
+func imageHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *ChatService) storeAttachment(data []byte, mimeType string, width, height int) (core.Attachment, error) {
@@ -913,3 +982,5 @@ func memberGroupsKey(memberID string) string   { return "member:" + memberID + "
 func ownedGroupsKey(memberID string) string    { return "member:" + memberID + ":owned-groups" }
 func messagesKey(groupID string) string        { return "group:" + groupID + ":messages" }
 func attachmentKey(attachmentID string) string { return "attachment:" + attachmentID }
+func attachmentRawKey(rawSum string) string    { return "attachment:raw:" + rawSum }
+func attachmentOutKey(outSum string) string    { return "attachment:out:" + outSum }

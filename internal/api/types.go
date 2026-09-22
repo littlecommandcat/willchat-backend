@@ -81,8 +81,12 @@ type attachmentRequest struct {
 	Data string `json:"data"`
 }
 
-type getMessageRequest struct {
+type getMessagesRequest struct {
 	Amount int `form:"amount" binding:"required"`
+}
+
+type getMessageRequest struct {
+	MessageID string `form:"message_id" binding:"required"`
 }
 
 type groupResponse struct {

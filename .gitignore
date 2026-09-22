@@ -2,6 +2,7 @@
 .env
 __pycache__
 *.log
+.VSCodeCounter
 test.md
 
 app_linux_amd64

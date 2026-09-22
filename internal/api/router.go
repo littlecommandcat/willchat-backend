@@ -56,6 +56,7 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	protected.GET("/:group_id/members/:member_id", middleware.RateLimit(10, 5*time.Second), chatService.GetMember)
 	protected.POST("/:group_id/messages", middleware.RateLimit(10, 10*time.Second), chatService.SendMessage)
 	protected.GET("/:group_id/messages", middleware.RateLimit(10, 5*time.Second), chatService.GetMessages)
+	protected.GET("/:group_id/message", middleware.RateLimit(5, 5*time.Second), chatService.GetMessage)
 
 	// Websocket
 	r.GET("/ws", middleware.RateLimit(10, 10*time.Second), chatService.WebSocket)

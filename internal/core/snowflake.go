@@ -15,6 +15,7 @@ const (
 	maxSequence    int64  = (1 << sequenceBits) - 1
 	memberPrefix   string = "mr-"
 	groupPrefix    string = "gr-"
+	messagePrefix  string = "ms-"
 )
 
 // Snowflake
@@ -110,5 +111,6 @@ func (s *Snowflake) ToSnowflake(externalID string) string {
 	id := strings.TrimSpace(externalID)
 	id = strings.TrimPrefix(id, memberPrefix)
 	id = strings.TrimPrefix(id, groupPrefix)
+	id = strings.TrimPrefix(id, messagePrefix)
 	return id
 }

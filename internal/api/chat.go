@@ -451,7 +451,7 @@ func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse
 func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 	response := messageResponse{
 		Content:   message.Content,
-		Id:        message.Id,
+		Id:        s.snowflake.ToSnowflake(message.Id),
 		Timestamp: message.Timestamp,
 		Type:      message.Type,
 	}
@@ -476,7 +476,7 @@ func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 	}
 	if message.ReplyTo != nil {
 		response.ReplyTo = &replyToResponse{
-			Id:       message.ReplyTo.Id,
+			Id:       s.snowflake.ToSnowflake(message.ReplyTo.Id),
 			AuthorId: s.snowflake.ToMemberID(message.ReplyTo.AuthorId),
 			Content:  message.ReplyTo.Content,
 			Type:     message.ReplyTo.Type,
@@ -543,6 +543,7 @@ func (s *ChatService) storeGroup(group groupRecord) error {
 	if group.GroupID == "" {
 		group.GroupID = group.ID
 	}
+	group.GroupID = s.snowflake.ToSnowflake(group.GroupID)
 	payload, err := json.Marshal(group)
 	if err != nil {
 		return err
@@ -573,6 +574,8 @@ func (s *ChatService) getGroup(groupID string) (groupRecord, error) {
 	if group.GroupID == "" {
 		group.GroupID = group.ID
 	}
+	group.GroupID = s.snowflake.ToSnowflake(group.GroupID)
+	group.OwnerID = s.snowflake.ToSnowflake(group.OwnerID)
 	return group, nil
 }
 
@@ -728,7 +731,7 @@ func (s *ChatService) findMessage(groupID, messageID string) (core.Message, erro
 		if err := json.Unmarshal([]byte(value), &message); err != nil {
 			return core.Message{}, err
 		}
-		if message.Id == messageID {
+		if s.snowflake.ToSnowflake(message.Id) == messageID {
 			return message, nil
 		}
 	}
@@ -845,6 +848,7 @@ func currentMemberID(c *gin.Context) string {
 }
 
 func (s *Service) memberByID(memberID string) (core.MemberData, error) {
+	memberID = s.snowflake.ToSnowflake(memberID)
 	value, err := s.redis.Get(context.Background(), memberKey(memberID)).Result()
 	if err != nil {
 		return core.MemberData{}, err
@@ -856,7 +860,7 @@ func (s *Service) memberByID(memberID string) (core.MemberData, error) {
 	if record.ID == "" {
 		return core.MemberData{}, errors.New("invalid redis member record")
 	}
-	return core.MemberData{Id: record.ID, Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
+	return core.MemberData{Id: s.snowflake.ToSnowflake(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
 }
 
 func (s *Service) memberByEmail(email string) (core.MemberData, error) {
@@ -904,7 +908,7 @@ func (s *Service) validateToken(token string) (string, bool) {
 	if json.Unmarshal([]byte(value), &current) != nil || current.MemberID == "" {
 		return "", false
 	}
-	return current.MemberID, true
+	return s.snowflake.ToSnowflake(current.MemberID), true
 }
 
 func groupKey(groupID string) string           { return "group:" + groupID }

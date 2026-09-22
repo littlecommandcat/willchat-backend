@@ -164,7 +164,7 @@ func (s *Service) RequireToken() gin.HandlerFunc {
 			return
 		}
 		c.Set("token", token)
-		c.Set("member_id", s.snowflake.ToSnowflake(currentToken.MemberID))
+		c.Set("member_id", s.snowflake.ToMemberID(currentToken.MemberID))
 		c.Next()
 	}
 }
@@ -340,7 +340,7 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 		return false
 	}
 	var record tokenRecord
-	return json.Unmarshal([]byte(value), &record) == nil && s.snowflake.ToSnowflake(record.MemberID) == memberID
+	return json.Unmarshal([]byte(value), &record) == nil && s.snowflake.ToSnowflake(record.MemberID) == s.snowflake.ToSnowflake(memberID)
 }
 
 func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, error) {
@@ -376,8 +376,8 @@ func (s *Service) getGroup(groupID string) (groupRecord, error) {
 	if group.GroupID == "" {
 		group.GroupID = group.ID
 	}
-	group.GroupID = s.snowflake.ToSnowflake(group.GroupID)
-	group.OwnerID = s.snowflake.ToSnowflake(group.OwnerID)
+	group.GroupID = s.snowflake.ToGroupID(group.GroupID)
+	group.OwnerID = s.snowflake.ToMemberID(group.OwnerID)
 	return group, nil
 }
 

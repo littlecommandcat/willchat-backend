@@ -106,6 +106,17 @@ func (s *Snowflake) ToGroupID(snowflakeStr string) string {
 	return groupPrefix + snowflakeStr
 }
 
+// ToMessageID
+func (s *Snowflake) ToMessageID(snowflakeStr string) string {
+	if snowflakeStr == "" {
+		return ""
+	}
+	if strings.HasPrefix(snowflakeStr, messagePrefix) {
+		return snowflakeStr
+	}
+	return messagePrefix + snowflakeStr
+}
+
 // ToSnowflake
 func (s *Snowflake) ToSnowflake(externalID string) string {
 	id := strings.TrimSpace(externalID)

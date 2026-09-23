@@ -7,12 +7,18 @@ class Requester:
         self._session: aiohttp.ClientSession | None=None
         self._data = {}
         self._token: str | None=None
+        self._closed: bool=True
 
     @property
     def token(self) -> str | None:
         return self._token
 
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
     def _init_session(self):
+        self._closed = False
         if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:
             return self._session
         
@@ -22,6 +28,7 @@ class Requester:
     def _cleanup(self):
         self._session = None
         self._data.clear()
+        self._closed = True
 
     async def close(self):
         if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:

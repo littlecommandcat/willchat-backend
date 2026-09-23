@@ -15,6 +15,9 @@ class Client:
         self._running = False
         self._requester = Requester()
 
+    # def is_running(self) -> bool:
+    #     return self._running
+    
     def listen(self, event):
         def decorator(func):
             self._listeners[event].append(func)
@@ -97,3 +100,6 @@ class Client:
 
         if self._socket is not None:
             await self._socket.close()
+
+        if not self._requester.closed:
+            await self._requester.close()

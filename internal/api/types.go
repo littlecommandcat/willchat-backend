@@ -13,11 +13,17 @@ type registerRequest struct {
 	Username string `json:"username" binding:"required,min=1,max=50"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
+	Code     string `json:"code" binding:"required,len=6,numeric"`
+}
+
+type verificationRequest struct {
+	Email string `json:"email" binding:"required,email"`
 }
 
 type updateProfileRequest struct {
 	Username *string `json:"username"`
 	Email    *string `json:"email" binding:"omitempty,email"`
+	Code     string  `json:"code"`
 }
 
 type resetPasswordRequest struct {

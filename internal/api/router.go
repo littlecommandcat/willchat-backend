@@ -1,7 +1,6 @@
 package api
 
 import (
-	"log"
 	"time"
 
 	"willchat-backend/internal/core"
@@ -11,14 +10,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var enableProxyChecker = false
-
 func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	r := gin.Default()
-	if enableProxyChecker {
-		log.Print("Enabled proxy checker")
-		r.Use(middleware.ProxyChecker())
-	}
 
 	r.GET("/health", middleware.RateLimit(5, 5*time.Second), Health)
 
@@ -32,6 +25,7 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 
 	// Auth
 	authRoutes := r.Group("/auth", middleware.RateLimit(3, 10*time.Second))
+	authRoutes.POST("/verification-code", authService.SendVerification)
 	authRoutes.POST("/register", authService.Register)
 	authRoutes.POST("/login", authService.Login)
 
@@ -60,6 +54,9 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 
 	// Websocket
 	r.GET("/ws", middleware.RateLimit(10, 10*time.Second), chatService.WebSocket)
+
+	// Web page
+	//r.Static("/app", "./public")
 
 	return r, nil
 }

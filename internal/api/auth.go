@@ -63,6 +63,16 @@ func (s *Service) Register(c *gin.Context) {
 		return
 	}
 
+	valid, err := s.consumeVerification(c.Request.Context(), request.Email, request.Code)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	if !valid {
+		writeError(c, http.StatusBadRequest, "invalid_code", "verification code is invalid, expired or used")
+		return
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create member")
@@ -235,6 +245,17 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		} else if !errors.Is(err, redis.Nil) {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
+		}
+		if newEmail != member.Email {
+			valid, err := s.consumeVerification(c.Request.Context(), newEmail, request.Code)
+			if err != nil {
+				writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+				return
+			}
+			if !valid {
+				writeError(c, http.StatusBadRequest, "invalid_code", "verification code is invalid, expired or used")
+				return
+			}
 		}
 		member.Email = newEmail
 	}

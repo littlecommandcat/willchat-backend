@@ -42,4 +42,5 @@ async def main():
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
+    asyncio.run(client.close())
     print("WebSocket listener stopped")

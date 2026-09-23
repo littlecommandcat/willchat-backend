@@ -93,9 +93,7 @@ type Response struct {
 type WSEvent struct {
 	// Event   string `json:"event"`
 	Event   wsEventType `json:"event"`
-	GroupID string      `json:"groupid"`
-	Data    any         `json:"data,omitempty"`
-	Content string      `json:"content,omitempty"`
+	Payload any         `json:"payload,omitempty"`
 }
 
 type WSMessage struct {

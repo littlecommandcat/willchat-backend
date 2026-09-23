@@ -32,7 +32,7 @@ type memberResponse struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	// GroupIDs     []string      `json:"group_ids"`
-	GroupRecords []groupResponse `json:"group_data"`
+	GroupRecords []groupResponse `json:"groups"`
 }
 
 // memberProfile

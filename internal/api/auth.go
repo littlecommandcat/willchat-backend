@@ -361,7 +361,7 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
-	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData}, nil
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData, Block: append([]string{}, member.Block...)}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
@@ -409,7 +409,7 @@ func (s *Service) createToken(memberID string) (string, error) {
 
 func (s *Service) storeMember(member core.MemberData) error {
 	key := memberKey(member.Id)
-	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token})
+	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block})
 	if err != nil {
 		log.Printf("redis member marshal failed key=%s: %v", key, err)
 		return err

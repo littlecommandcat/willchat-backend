@@ -1,3 +1,3 @@
 # Backend Websocket Docs
 
-wait me
+Please see [client](/examples/client/)

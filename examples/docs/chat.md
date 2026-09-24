@@ -2,7 +2,7 @@
 
 ## get
 
-`/groups/{GROUP_ID}/messages`
+`/api/groups/{GROUP_ID}/messages`
 
 ### Request
 
@@ -28,7 +28,7 @@
 例如：
 
 ```text
-/groups/{GROUP_ID}/messages?message_id=ms-889509013664829440
+/api/groups/{GROUP_ID}/messages?message_id=ms-889509013664829440
 ```
 
 * HEADERS
@@ -129,7 +129,7 @@ attachment:<attachment_id>
 
 ## send
 
-`/groups/{GROUP_ID}/messages`
+`/api/groups/{GROUP_ID}/messages`
 
 ### Request
 

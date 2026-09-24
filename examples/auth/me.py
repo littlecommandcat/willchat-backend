@@ -9,6 +9,6 @@ _, login_body = request(
 token = login_body.get("data", {}).get("token", "")
 request(
     "GET",
-    "/auth/me",
+    "/api/me",
     headers={"Authorization": f"Bearer {token}"},
 )

@@ -34,7 +34,7 @@ reply_to = first_body.get("data", {}).get("message", {}).get("id", "") if isinst
 # every image to JPEG (longest edge 1080, quality 80) before storing the bytes.
 request(
     "POST",
-    f"/groups/{GROUP_ID}/messages",
+    f"/api/groups/{GROUP_ID}/messages",
     headers=headers,
     data={"content": "with image", "reply_to": reply_to},
     files={"attachments": ("sample.png", sample_png(), "image/png")},

@@ -8,7 +8,7 @@ token = login_body.get("data", {}).get("token", "") if isinstance(login_body, di
 
 request(
     "GET",
-    f"/groups/{GROUP_ID}/messages",
+    f"/api/groups/{GROUP_ID}/messages",
     headers={"Authorization": f"Bearer {token}"},
     params={"amount": AMOUNT},
 )

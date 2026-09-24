@@ -14,7 +14,7 @@ token = login_body.get("data", {}).get("token", "")
 headers = {"Authorization": f"Bearer {token}"}
 request(
     "PUT",
-    "/auth/me",
+    "/api/me",
     headers=headers,
     json={"username": UPDATED_USERNAME},
 )

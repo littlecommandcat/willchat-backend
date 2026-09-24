@@ -1,7 +1,7 @@
 # Backend API Docs
 
 ## create
-`/groups`
+`/api/groups`
 
 Request
 
@@ -23,7 +23,7 @@ Response
     ```
 
 ## delete
-`/groups/{GROUP_ID}`
+`/api/groups/{GROUP_ID}`
 
 Request
 
@@ -41,7 +41,7 @@ Response
     ```
 
 ## get
-`/groups/{GROUP_ID}`
+`/api/groups/{GROUP_ID}`
 
 Request
 
@@ -59,7 +59,7 @@ Response
     ```
 
 ## members-join
-`/groups/{GROUP_ID}/members`
+`/api/groups/{GROUP_ID}/members`
 
 Request
 
@@ -75,7 +75,7 @@ Response
 - idk but you can try
 
 ## members-leave
-`/groups/{GROUP_ID}/members`
+`/api/groups/{GROUP_ID}/members`
 
 Request
 
@@ -91,7 +91,7 @@ Response
 - idk but you can try
 
 ## member-get
-`/groups/{GROUP_ID}/members/{MEMBER_ID}`
+`/api/groups/{GROUP_ID}/members/{MEMBER_ID}`
 
 Request
 

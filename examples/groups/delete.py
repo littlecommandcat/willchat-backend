@@ -10,6 +10,6 @@ token = login_body.get("data", {}).get("token", "") if isinstance(login_body, di
 
 request(
     "DELETE",
-    f"/groups/{GROUP_ID}",
+    f"/api/groups/{GROUP_ID}",
     headers={"Authorization": f"Bearer {token}"},
 )

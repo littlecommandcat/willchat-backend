@@ -6,7 +6,7 @@ token = login_body.get("data", {}).get("token", "") if isinstance(login_body, di
 
 _, group_body = request(
     "POST",
-    "/groups",
+    "/api/groups",
     headers={"Authorization": f"Bearer {token}"},
     json={"name": "testgroup"},
 )

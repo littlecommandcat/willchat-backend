@@ -390,6 +390,9 @@ func (s *ChatService) GetMessages(c *gin.Context) {
 
 	messageResponses := make([]messageResponse, 0, len(messages))
 	for _, message := range messages {
+		if message.Status == core.MessageStatusEnum.Deleted {
+			continue
+		}
 		messageResponses = append(messageResponses, s.toMessageResponse(message))
 	}
 
@@ -437,7 +440,10 @@ func (s *ChatService) getMessage(c *gin.Context, groupID string, memberID string
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-
+	if message.Status == core.MessageStatusEnum.Deleted {
+		writeError(c, http.StatusNotFound, "message_not_found", "message not found")
+		return
+	}
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",
 		Code:   "success",
@@ -708,6 +714,9 @@ func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, e
 		var message core.Message
 		if err := json.Unmarshal([]byte(value), &message); err != nil {
 			return nil, err
+		}
+		if message.Status == core.MessageStatusEnum.Deleted {
+			continue
 		}
 		messages = append(messages, message)
 	}

@@ -11,9 +11,8 @@ import (
 	"willchat-backend/internal/core"
 )
 
-func RateLimit(max int, window time.Duration) gin.HandlerFunc {
+func RateLimitToken(max int, window time.Duration) gin.HandlerFunc {
 	var mu sync.Mutex
-	requestsIp := make(map[string][]time.Time)
 	requestsToken := make(map[string][]time.Time)
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
@@ -22,8 +21,6 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 		if strings.HasPrefix(auth, "Bearer ") {
 			token = strings.TrimPrefix(auth, "Bearer ")
 		}
-
-		ip := c.ClientIP()
 		now := time.Now()
 		mu.Lock()
 
@@ -52,6 +49,19 @@ func RateLimit(max int, window time.Duration) gin.HandlerFunc {
 		}
 		recentTokenTimes = append(recentTokenTimes, now)
 		requestsToken[token] = recentTokenTimes
+
+		mu.Unlock()
+		c.Next()
+	}
+}
+
+func RateLimitIP(max int, window time.Duration) gin.HandlerFunc {
+	var mu sync.Mutex
+	requestsIp := make(map[string][]time.Time)
+	return func(c *gin.Context) {
+		ip := c.ClientIP()
+		now := time.Now()
+		mu.Lock()
 
 		// Ip ratelimit
 		timesIp := requestsIp[ip]

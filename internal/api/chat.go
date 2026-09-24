@@ -15,8 +15,6 @@ import (
 
 	"willchat-backend/internal/core"
 
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -541,60 +539,6 @@ func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 		}
 	}
 	return response
-}
-
-func (s *ChatService) WebSocket(c *gin.Context) {
-	token := strings.TrimSpace(c.Query("token"))
-	if core.SafeCompare(token, "") {
-		if headerToken, ok := bearerToken(c); ok {
-			token = headerToken
-		}
-	}
-	memberID, ok := s.auth.validateToken(token)
-	if !ok {
-		code := "invalid_token"
-		message := "token is invalid"
-		if core.SafeCompare(token, "") {
-			code = "missing_token"
-			message = "a bearer token is required"
-		}
-		writeError(c, http.StatusUnauthorized, code, message)
-		return
-	}
-
-	conn, err := websocket.Accept(c.Writer, c.Request, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
-	if err != nil {
-		log.Printf("WebSocket accept failed: %v", err)
-		return
-	}
-	defer conn.CloseNow()
-
-	client := s.hub.Register(memberID, "")
-	log.Printf("Websocket connected: %s", memberID)
-	defer s.hub.Unregister(client)
-
-	ctx, cancel := context.WithCancel(c.Request.Context())
-	defer cancel()
-
-	go func() {
-		for payload := range client.Send {
-			if err := wsjson.Write(ctx, conn, json.RawMessage(payload)); err != nil {
-				cancel()
-				return
-			}
-		}
-		cancel()
-	}()
-
-	for {
-		var incoming any
-		if err := wsjson.Read(ctx, conn, &incoming); err != nil {
-			cancel()
-			return
-		}
-	}
 }
 
 func (s *ChatService) storeGroup(group groupRecord) error {

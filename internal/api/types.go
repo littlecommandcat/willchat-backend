@@ -1,9 +1,17 @@
 package api
 
-import "willchat-backend/internal/core"
+import (
+	"time"
+	"willchat-backend/internal/core"
+)
+
+// Ws time
+const (
+	websocketPingInterval = 30 * time.Second
+	websocketPingTimeout  = 10 * time.Second
+)
 
 // Auth requests
-
 type credentialsRequest struct {
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`

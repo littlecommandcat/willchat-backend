@@ -15,6 +15,12 @@ class Client:
         self._running = False
         self._requester = Requester()
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_value, traceback):
+        await self.close()
+
     # def is_running(self) -> bool:
     #     return self._running
     
@@ -61,6 +67,7 @@ class Client:
                 async with websockets.connect(
                     self.websocket_url(token),
                     origin=BASE_URL,
+                    ping_interval=None
                 ) as socket:
                     self._socket = socket
 
@@ -85,6 +92,12 @@ class Client:
 
             except asyncio.CancelledError:
                 raise
+
+            except websockets.ConnectionClosed as error:
+                await self._dispatch("disconnect", error)
+
+                if self._running:
+                    await asyncio.sleep(3)
 
             except Exception as error:
                 await self._dispatch("error", error)

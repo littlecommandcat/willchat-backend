@@ -18,7 +18,7 @@ import (
 func (s *ChatService) WebSocket(c *gin.Context) {
 	token := strings.TrimSpace(c.Query("token"))
 	if core.SafeCompare(token, "") {
-		if headerToken, ok := bearerToken(c); ok {
+		if headerToken, ok := memberToken(c); ok {
 			token = headerToken
 		}
 	}
@@ -30,7 +30,7 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 
 		if core.SafeCompare(token, "") {
 			code = "missing_token"
-			message = "a bearer token is required"
+			message = "a member token is required"
 		}
 
 		writeError(c, http.StatusUnauthorized, code, message)

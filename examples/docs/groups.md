@@ -12,7 +12,7 @@ Request
     ```
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response
@@ -30,7 +30,7 @@ Request
 - DELETE
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response
@@ -48,7 +48,7 @@ Request
 - GET
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response
@@ -66,7 +66,7 @@ Request
 - POST
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response
@@ -82,7 +82,7 @@ Request
 - DELETE
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response
@@ -98,7 +98,7 @@ Request
 - GET
 - HEADERS
 - ```json
-    {"Authorization": f"Bearer {token}"}
+    {"Authorization": f"member {token}"}
     ```
 
 Response

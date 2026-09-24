@@ -7,6 +7,6 @@ token = login_body.get("data", {}).get("token", "") if isinstance(login_body, di
 request(
     "POST",
     f"/api/groups/{GROUP_ID}/messages",
-    headers={"Authorization": f"Bearer {token}"},
+    headers={"Authorization": f"member {token}"},
     json={"content": "Hello Gay"},
 )

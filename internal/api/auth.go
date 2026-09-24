@@ -144,9 +144,9 @@ func (s *Service) Login(c *gin.Context) {
 
 func (s *Service) RequireToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token, ok := bearerToken(c)
+		token, ok := memberToken(c)
 		if !ok {
-			writeError(c, http.StatusUnauthorized, "missing_token", "a bearer token is required")
+			writeError(c, http.StatusUnauthorized, "missing_token", "a member token is required")
 			c.Abort()
 			return
 		}
@@ -480,10 +480,10 @@ func bindCredentials(c *gin.Context, request *credentialsRequest) bool {
 	return true
 }
 
-func bearerToken(c *gin.Context) (string, bool) {
+func memberToken(c *gin.Context) (string, bool) {
 	parts := strings.Fields(c.GetHeader("Authorization"))
 	return func() (string, bool) {
-		if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") && parts[1] != "" {
+		if len(parts) == 2 && strings.EqualFold(parts[0], "member") && parts[1] != "" {
 			return parts[1], true
 		}
 		return "", false

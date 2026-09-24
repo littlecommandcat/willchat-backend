@@ -17,17 +17,17 @@ async def on_ready():
 
 @client.listen("message_send")
 async def on_message(payload):
-    print("MESSAGE:", payload.get("data", {}))
+    print("MESSAGE:", payload)
 
 
 @client.listen("group_join")
 async def on_group_join(payload):
-    print("JOIN GROUP:", payload.get("data", {}))
+    print("JOIN GROUP:", payload)
 
 
 @client.listen("group_leave")
 async def on_group_leave(payload):
-    print("LEAVE GROUP:", payload.get("data", {}))
+    print("LEAVE GROUP:", payload)
 
 
 @client.listen("error")

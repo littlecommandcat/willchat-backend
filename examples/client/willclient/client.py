@@ -56,7 +56,7 @@ class Client:
         self._running = True
         if email and password:
             data, token = await self._requester.login(email, password)
-            print(data, token)
+            # print(data, token)
 
         if not token:
             self._running = False

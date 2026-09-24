@@ -18,8 +18,8 @@ func RateLimitToken(max int, window time.Duration) gin.HandlerFunc {
 		auth := c.GetHeader("Authorization")
 
 		token := "Unauth"
-		if strings.HasPrefix(auth, "Bearer ") {
-			token = strings.TrimPrefix(auth, "Bearer ")
+		if strings.HasPrefix(auth, "member ") {
+			token = strings.TrimPrefix(auth, "member ")
 		}
 		now := time.Now()
 		mu.Lock()

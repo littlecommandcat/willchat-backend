@@ -11,7 +11,7 @@ _, login_body = request(
 )
 token = login_body.get("data", {}).get("token", "")
 
-headers = {"Authorization": f"Bearer {token}"}
+headers = {"Authorization": f"member {token}"}
 request(
     "PUT",
     "/api/me",

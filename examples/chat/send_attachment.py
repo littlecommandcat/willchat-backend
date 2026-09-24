@@ -25,7 +25,7 @@ def sample_png(width=1600, height=1200):
 
 _, login_body = request("POST", "/auth/login", json={"email": EMAIL, "password": PASSWORD})
 token = login_body.get("data", {}).get("token", "") if isinstance(login_body, dict) else ""
-headers = {"Authorization": f"Bearer {token}"}
+headers = {"Authorization": f"member {token}"}
 
 _, first_body = request("POST", f"/groups/{GROUP_ID}/messages", headers=headers, json={"content": "Hello Gay"})
 reply_to = first_body.get("data", {}).get("message", {}).get("id", "") if isinstance(first_body, dict) else ""

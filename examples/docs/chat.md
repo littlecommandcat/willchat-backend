@@ -35,7 +35,7 @@
 
 ```json
 {
-    "Authorization": "Bearer <token>"
+    "Authorization": "<token>"
 }
 ```
 
@@ -152,7 +152,7 @@ attachment:<attachment_id>
 
 ```json
 {
-    "Authorization": "Bearer <token>"
+    "Authorization": "<token>"
 }
 ```
 

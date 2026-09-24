@@ -152,9 +152,8 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 	responseGroupID := s.snowflake.ToGroupID(groupID)
 	responseMemberID := s.snowflake.ToMemberID(memberID)
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   core.WSEventEnum.JoinGroup,
-		GroupID: responseGroupID,
-		Data: gin.H{
+		Event: core.WSEventEnum.JoinGroup,
+		Payload: gin.H{
 			"group_id":  responseGroupID,
 			"member_id": responseMemberID,
 		},
@@ -207,9 +206,8 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 	responseGroupID := s.snowflake.ToGroupID(groupID)
 	responseMemberID := s.snowflake.ToMemberID(memberID)
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   core.WSEventEnum.LeaveGroup,
-		GroupID: responseGroupID,
-		Data: gin.H{
+		Event: core.WSEventEnum.LeaveGroup,
+		Payload: gin.H{
 			"group_id":  responseGroupID,
 			"member_id": responseMemberID,
 		},
@@ -276,9 +274,8 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 
 	responseGroupID := s.snowflake.ToGroupID(groupID)
 	s.hub.Broadcast(groupID, core.WSEvent{
-		Event:   core.WSEventEnum.DeleteGroup,
-		GroupID: responseGroupID,
-		Data: gin.H{
+		Event: core.WSEventEnum.DeleteGroup,
+		Payload: gin.H{
 			"group_id": responseGroupID,
 		},
 	})
@@ -347,7 +344,7 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		return
 	}
 	responseMessage := s.toMessageResponse(message)
-	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, GroupID: s.snowflake.ToGroupID(groupID), Data: responseMessage})
+	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: responseMessage})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage}})
 }
 

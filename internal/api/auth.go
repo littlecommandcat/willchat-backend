@@ -344,7 +344,7 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 }
 
 func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, error) {
-	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(member.Id)).Result()
+	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(s.snowflake.ToSnowflake(member.Id))).Result()
 	if err != nil {
 		return memberResponse{}, err
 	}
@@ -353,7 +353,7 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 		if groupIDs[i] == "" {
 			continue
 		}
-		group, err := s.getGroup(groupIDs[i])
+		group, err := s.getGroup(s.snowflake.ToSnowflake(groupIDs[i]))
 		if err != nil {
 			log.Printf("getGroup %s failed: %v", groupIDs[i], err)
 			continue

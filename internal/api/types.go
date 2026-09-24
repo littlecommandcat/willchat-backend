@@ -40,8 +40,9 @@ type memberResponse struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	// GroupIDs     []string      `json:"group_ids"`
-	GroupRecords []groupResponse `json:"group_data"`
-	Block        []string        `json:"block"`
+	GroupRecords []groupResponse    `json:"group_data"`
+	Block        *[]string          `json:"block"`
+	Read         *map[string]string `json:"read"`
 }
 
 // memberProfile
@@ -56,12 +57,13 @@ type tokenRecord struct {
 }
 
 type redisMemberRecord struct {
-	ID           string   `json:"id"`
-	Username     string   `json:"username"`
-	Email        string   `json:"email"`
-	PasswordHash string   `json:"password_hash"`
-	Token        string   `json:"token"`
-	Block        []string `json:"block"`
+	ID           string             `json:"id"`
+	Username     string             `json:"username"`
+	Email        string             `json:"email"`
+	PasswordHash string             `json:"password_hash"`
+	Token        string             `json:"token"`
+	Block        *[]string          `json:"block"`
+	Read         *map[string]string `json:"read"`
 }
 
 // Chat requests and records

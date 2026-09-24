@@ -68,7 +68,11 @@ func (s *Service) Register(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "password_hash_failed", "unable to create member")
 		return
 	}
-	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash)}
+
+	// Pointer is trash
+	block := []string{}
+	read := make(map[string]string)
+	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash), Block: &block, Read: &read}
 
 	token, err := s.createToken(member.Id)
 	if err != nil {
@@ -361,7 +365,15 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
-	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData, Block: append([]string{}, member.Block...)}, nil
+	// Trash pointer
+	if member.Block == nil {
+		member.Block = &[]string{}
+	}
+	if member.Read == nil {
+		read := make(map[string]string)
+		member.Read = &read
+	}
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData, Block: member.Block, Read: member.Read}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
@@ -409,7 +421,15 @@ func (s *Service) createToken(memberID string) (string, error) {
 
 func (s *Service) storeMember(member core.MemberData) error {
 	key := memberKey(member.Id)
-	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block})
+	// Trash pointer
+	if member.Block == nil {
+		member.Block = &[]string{}
+	}
+	if member.Read == nil {
+		read := make(map[string]string)
+		member.Read = &read
+	}
+	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block, Read: member.Read})
 	if err != nil {
 		log.Printf("redis member marshal failed key=%s: %v", key, err)
 		return err

@@ -863,7 +863,7 @@ func (s *Service) memberByID(memberID string) (core.MemberData, error) {
 	if record.ID == "" {
 		return core.MemberData{}, errors.New("invalid redis member record")
 	}
-	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token, Block: record.Block}, nil
+	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash}, nil
 }
 
 func (s *Service) memberByEmail(email string) (core.MemberData, error) {

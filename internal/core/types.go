@@ -1,6 +1,7 @@
 package core
 
 type MessageType int
+type MessageStatus int
 type wsEventType string
 
 // Attachment
@@ -38,6 +39,18 @@ var MessageTypeEnum = messageTypeEnum{
 	Dev:       2,
 }
 
+type messageStatusEnum struct {
+	Normal  MessageStatus
+	Deleted MessageStatus
+	Blocked MessageStatus
+}
+
+var MessageStatusEnum = messageStatusEnum{
+	Normal:  0,
+	Deleted: 1,
+	Blocked: 2,
+}
+
 type eventType struct {
 	SendMessage   wsEventType
 	DeleteMessage wsEventType
@@ -62,11 +75,12 @@ var WSEventEnum = eventType{
 }
 
 type MemberData struct {
-	Id           string `json:"id"`
-	Username     string `json:"username"`
-	Email        string `json:"email"`
-	PasswordHash string `json:"-"`
-	Token        string `json:"-"`
+	Id           string   `json:"id"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	PasswordHash string   `json:"-"`
+	Token        string   `json:"-"`
+	Block        []string `json:"block"`
 }
 
 type TokenData struct {
@@ -74,13 +88,14 @@ type TokenData struct {
 }
 
 type Message struct {
-	Content     string       `json:"content"`
-	Attachments []Attachment `json:"attachments,omitempty"`
-	ReplyTo     *ReplyTo     `json:"reply_to,omitempty"`
-	Id          string       `json:"id"`
-	AuthorId    string       `json:"authorid"`
-	Timestamp   int64        `json:"timestamp"`
-	Type        MessageType  `json:"type"`
+	Content     string        `json:"content"`
+	Attachments []Attachment  `json:"attachments,omitempty"`
+	ReplyTo     *ReplyTo      `json:"reply_to,omitempty"`
+	Id          string        `json:"id"`
+	AuthorId    string        `json:"authorid"`
+	Timestamp   int64         `json:"timestamp"`
+	Type        MessageType   `json:"type"`
+	Status      MessageStatus `json:"status"`
 }
 
 type Response struct {

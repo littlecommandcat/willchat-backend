@@ -72,7 +72,7 @@ func (s *Service) Register(c *gin.Context) {
 	// Pointer is trash
 	block := []string{}
 	read := make(map[string]string)
-	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash), Block: &block, Read: &read}
+	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash), Block: block, Read: read}
 
 	token, err := s.createToken(member.Id)
 	if err != nil {
@@ -365,14 +365,6 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
-	// Trash pointer
-	if member.Block == nil {
-		member.Block = &[]string{}
-	}
-	if member.Read == nil {
-		read := make(map[string]string)
-		member.Read = &read
-	}
 	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData, Block: member.Block, Read: member.Read}, nil
 }
 
@@ -421,14 +413,6 @@ func (s *Service) createToken(memberID string) (string, error) {
 
 func (s *Service) storeMember(member core.MemberData) error {
 	key := memberKey(member.Id)
-	// Trash pointer
-	if member.Block == nil {
-		member.Block = &[]string{}
-	}
-	if member.Read == nil {
-		read := make(map[string]string)
-		member.Read = &read
-	}
 	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block, Read: member.Read})
 	if err != nil {
 		log.Printf("redis member marshal failed key=%s: %v", key, err)
@@ -481,13 +465,11 @@ func bindCredentials(c *gin.Context, request *credentialsRequest) bool {
 }
 
 func memberToken(c *gin.Context) (string, bool) {
-	parts := strings.Fields(c.GetHeader("Authorization"))
-	return func() (string, bool) {
-		if len(parts) == 2 && strings.EqualFold(parts[0], "member") && parts[1] != "" {
-			return parts[1], true
-		}
+	token := c.GetHeader("Authorization")
+	if token == "" {
 		return "", false
-	}()
+	}
+	return token, true
 }
 
 func tokenKey(token string) string       { return "token:" + token }

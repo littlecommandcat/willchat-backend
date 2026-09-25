@@ -10,5 +10,5 @@ token = login_body.get("data", {}).get("token", "")
 request(
     "GET",
     "/api/me",
-    headers={"Authorization": f"member {token}"},
+    headers={"Authorization": f"{token}"},
 )

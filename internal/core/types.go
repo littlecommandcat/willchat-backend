@@ -75,13 +75,13 @@ var WSEventEnum = eventType{
 }
 
 type MemberData struct {
-	Id           string             `json:"id"`
-	Username     string             `json:"username"`
-	Email        string             `json:"email"`
-	PasswordHash string             `json:"-"`
-	Token        string             `json:"-"`
-	Block        *[]string          `json:"block"`
-	Read         *map[string]string `json:"read"`
+	Id           string            `json:"id"`
+	Username     string            `json:"username"`
+	Email        string            `json:"email"`
+	PasswordHash string            `json:"-"`
+	Token        string            `json:"-"`
+	Block        []string          `json:"block"`
+	Read         map[string]string `json:"read"`
 }
 
 type TokenData struct {

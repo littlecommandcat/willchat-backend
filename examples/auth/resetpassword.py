@@ -11,5 +11,5 @@ request(
     "POST",
     "/auth/reset",
     json={"password": NEW_PASSWORD},
-    headers={"Authorization": f"member {token}"},
+    headers={"Authorization": f"{token}"},
 )

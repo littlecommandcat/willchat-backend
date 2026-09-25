@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
+	// "strings"
 	"sync"
 	"time"
 
@@ -17,10 +17,10 @@ func RateLimitToken(max int, window time.Duration) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 
-		token := "Unauth"
-		if strings.HasPrefix(auth, "member ") {
-			token = strings.TrimPrefix(auth, "member ")
-		}
+		token := auth
+		// if strings.HasPrefix(auth, "") {
+		// 	token = strings.TrimPrefix(auth, "")
+		// }
 		now := time.Now()
 		mu.Lock()
 

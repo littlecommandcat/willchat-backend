@@ -8,7 +8,7 @@ Request
 - GET
 - JSON
 - ```json
-    {"Authorization": f"member {token}"}
+    {"Authorization": f"{token}"}
     ```
 
 Response
@@ -25,7 +25,7 @@ Request
 - PUT
 - HEADERS
 - ```json
-    {"Authorization": f"member {token}"}
+    {"Authorization": f"{token}"}
     ```
 - JSON
 - ```json

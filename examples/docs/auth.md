@@ -52,7 +52,7 @@ Request
 - PUT
 - HEADERS
 - ```json
-    {"Authorization": f"member {token}"}
+    {"Authorization": f"{token}"}
     ```
 - JSON
 - ```json

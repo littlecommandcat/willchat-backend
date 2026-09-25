@@ -49,7 +49,7 @@ func NewChatService(redisClient *redis.Client, snowflake *core.Snowflake, authSe
 }
 
 func (s *ChatService) CreateGroup(c *gin.Context) {
-	memberID := currentMemberID(c)
+	memberID := s.snowflake.ToSnowflake(currentMemberID(c))
 	var request createGroupRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "name is required")
@@ -73,26 +73,27 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 	group := groupRecord{
 		GroupID:   s.snowflake.Next(),
 		Name:      name,
-		OwnerID:   memberID,
+		OwnerID:   s.snowflake.ToSnowflake(memberID),
 		CreatedAt: time.Now().UnixMilli(),
 	}
+	groupID := s.snowflake.ToGroupID(group.GroupID)
 	if err := s.storeGroup(group); err != nil {
-		log.Printf("redis group write failed group_id=%s: %v", group.GroupID, err)
+		log.Printf("redis group write failed group_id=%s: %v", groupID, err)
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	if err := s.addMember(group.GroupID, memberID); err != nil {
-		_ = s.redis.Del(context.Background(), groupKey(group.GroupID)).Err()
+	if err := s.addMember(groupID, memberID); err != nil {
+		_ = s.redis.Del(context.Background(), groupKey(groupID)).Err()
 		log.Printf("redis group owner membership write failed group_id=%s member_id=%s: %v", group.GroupID, memberID, err)
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	if err := s.auth.addOwnedGroup(memberID, group.GroupID); err != nil {
+	if err := s.auth.addOwnedGroup(memberID, groupID); err != nil {
 		ctx := context.Background()
-		_ = s.redis.Del(ctx, groupKey(group.GroupID), groupMembersKey(group.GroupID)).Err()
-		_ = s.redis.SRem(ctx, memberGroupsKey(memberID), group.GroupID).Err()
-		_ = s.redis.SRem(ctx, ownedGroupsKey(memberID), group.GroupID).Err()
-		log.Printf("redis member group write failed group_id=%s member_id=%s: %v", group.GroupID, memberID, err)
+		_ = s.redis.Del(ctx, groupKey(groupID), groupMembersKey(groupID)).Err()
+		_ = s.redis.SRem(ctx, memberGroupsKey(memberID), groupID).Err()
+		_ = s.redis.SRem(ctx, ownedGroupsKey(memberID), groupID).Err()
+		log.Printf("redis member group write failed group_id=%s member_id=%s: %v", groupID, memberID, err)
 		if errors.Is(err, errGroupLimitReached) {
 			writeError(c, http.StatusConflict, "group_limit_reached", "a member can create at most 15 groups")
 			return
@@ -101,6 +102,10 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 
+	s.hub.Broadcast(groupID, core.WSEvent{
+		Event:   core.WSEventEnum.CreateGroup,
+		Payload: toGroupResponse(s.snowflake, group),
+	})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": toGroupResponse(s.snowflake, group)}})
 }
 
@@ -234,7 +239,8 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	if group.OwnerID != memberID {
+
+	if s.snowflake.ToSnowflake(group.OwnerID) != memberID {
 		writeError(c, http.StatusForbidden, "not_group_owner", "only the group owner can delete this group")
 		return
 	}
@@ -256,7 +262,7 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 
 	if _, err := s.redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		for _, groupMemberID := range members {
-			pipe.SRem(ctx, memberGroupsKey(groupMemberID), groupID)
+			pipe.SRem(ctx, memberGroupsKey(s.snowflake.ToSnowflake(groupMemberID)), groupID)
 		}
 		pipe.SRem(ctx, ownedGroupsKey(memberID), groupID)
 		pipe.Del(ctx, groupKey(groupID), groupMembersKey(groupID), groupMessagesKey(groupID))
@@ -943,7 +949,7 @@ func (s *Service) memberByID(memberID string) (core.MemberData, error) {
 	if record.ID == "" {
 		return core.MemberData{}, errors.New("invalid redis member record")
 	}
-	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash}, nil
+	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
 }
 
 func (s *Service) memberByEmail(email string) (core.MemberData, error) {

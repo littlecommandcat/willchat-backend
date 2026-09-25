@@ -57,6 +57,7 @@ type eventType struct {
 	ProfileUpdate wsEventType
 	JoinGroup     wsEventType
 	LeaveGroup    wsEventType
+	CreateGroup   wsEventType
 	DeleteGroup   wsEventType
 }
 
@@ -71,6 +72,7 @@ var WSEventEnum = eventType{
 	// Group
 	JoinGroup:   wsEventType(eventGroupType + "join"),
 	LeaveGroup:  wsEventType(eventGroupType + "leave"),
+	CreateGroup: wsEventType(eventGroupType + "create"),
 	DeleteGroup: wsEventType(eventGroupType + "delete"),
 }
 

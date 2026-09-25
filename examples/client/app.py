@@ -23,6 +23,13 @@ async def on_message(payload):
 async def on_message(payload):
     print("DELETE:", payload)
 
+@client.listen("group_ceate")
+async def on_group_join(payload):
+    print("CREATE GROUP:", payload)
+
+@client.listen("group_delete")
+async def on_group_leave(payload):
+    print("DELETE GROUP:", payload)
 
 @client.listen("group_join")
 async def on_group_join(payload):
@@ -44,7 +51,7 @@ async def on_disconnect(error):
 
 async def main():
     async with client:
-        await client.start(EMAIL, PASSWORD)
+        await client.start(token="MYoTLSLBc3LV5M9DLVbdRa_XnSphOGxCECn9404gL14")
 
 
 try:

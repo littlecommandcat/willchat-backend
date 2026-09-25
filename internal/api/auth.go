@@ -114,7 +114,8 @@ func (s *Service) Login(c *gin.Context) {
 		return
 	}
 	token := member.Token
-	if core.SafeCompare(token, "") || !s.tokenBelongsToMember(token, member.Id) {
+	log.Printf("Get token: %s", token)
+	if core.SafeCompare(token, "") || !s.tokenBelongsToMember(token, s.snowflake.ToSnowflake(member.Id)) {
 		token, err = s.createToken(member.Id)
 		if err != nil {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
@@ -386,6 +387,7 @@ func (s *Service) getGroup(groupID string) (groupRecord, error) {
 }
 
 func (s *Service) createToken(memberID string) (string, error) {
+	memberID = s.snowflake.ToSnowflake(memberID)
 	token := newToken()
 	key := tokenKey(token)
 	payload, err := json.Marshal(tokenRecord{MemberID: memberID})
@@ -485,5 +487,5 @@ func newToken() string {
 }
 
 func writeError(c *gin.Context, status int, code, message string) {
-	c.JSON(status, core.Response{Status: "error", Code: code, Data: gin.H{"message": message}})
+	c.JSON(status, core.Response{Status: "error", Code: code, Message: message})
 }

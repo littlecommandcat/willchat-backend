@@ -346,6 +346,55 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage}})
 }
 
+func (s *ChatService) DeleteMessage(c *gin.Context) {
+	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
+	memberID := s.snowflake.ToSnowflake(currentMemberID(c))
+	messageID := c.Query("message_id")
+
+	if messageID == "" {
+		writeError(c, http.StatusBadRequest, "invalid_request", "message_id is required")
+		return
+	}
+
+	if _, err := s.getGroup(groupID); errors.Is(err, redis.Nil) {
+		writeError(c, http.StatusNotFound, "group_not_found", "group not found")
+		return
+	} else if err != nil {
+		log.Printf("redis group read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	if !s.isMember(groupID, memberID) {
+		writeError(c, http.StatusForbidden, "not_group_member", "member is not a member of this group")
+		return
+	}
+
+	message, err := s.findMessage(groupID, messageID)
+	if err != nil {
+		writeError(c, http.StatusNotFound, "message_not_found", "message not found")
+		return
+	}
+
+	if message.AuthorId != memberID {
+		writeError(c, http.StatusForbidden, "not_message_author", "member is not message author")
+		return
+	}
+	respMessage, err := s.deleteMessage(groupID, messageID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "message_not_delete", err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, core.Response{
+		Status: "ok",
+		Code:   "success",
+		Data: gin.H{
+			"message": respMessage,
+		},
+	})
+}
+
 func (s *ChatService) GetMessages(c *gin.Context) {
 	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
 	memberID := s.snowflake.ToSnowflake(currentMemberID(c))
@@ -748,6 +797,30 @@ func (s *ChatService) findMessage(groupID, messageID string) (core.Message, erro
 		}
 	}
 	return core.Message{}, errMessageNotFound
+}
+
+// deleteMessage
+func (s *ChatService) deleteMessage(groupID, messageID string) (core.Message, error) {
+	messageKey := messagesKey(groupID)
+	message, err := s.findMessage(groupID, messageID)
+	if err != nil {
+		return message, err
+	}
+
+	message.Status = core.MessageStatusEnum.Deleted
+	messageJSON, err := json.Marshal(message)
+
+	if err != nil {
+		message.Status = core.MessageStatusEnum.Normal
+		return message, err
+	}
+
+	if err := s.redis.Set(context.Background(), messageKey, messageJSON, 0).Err(); err != nil {
+		message.Status = core.MessageStatusEnum.Normal
+		return message, err
+	}
+	// redisStatus.Err()
+	return message, nil
 }
 
 // sendMessageInput

@@ -8,6 +8,7 @@ class Requester:
         self._data = {}
         self._token: str | None=None
         self._closed: bool=True
+        # self._init_session()
 
     @property
     def token(self) -> str | None:
@@ -17,13 +18,13 @@ class Requester:
     def closed(self) -> bool:
         return self._closed
 
-    def _init_session(self):
+    def _init_session(self) -> None:
         self._closed = False
         if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:
-            return self._session
+            return
         
         self._session = aiohttp.ClientSession()
-        return self._session
+        # return self._session
 
     def _cleanup(self):
         self._session = None
@@ -37,7 +38,7 @@ class Requester:
         self._cleanup()
 
     async def login(self, email: str, password: str) -> tuple[dict, str | None]:
-        self._init_session()
+        # self._init_session()
         resp, login_body = await request(
             "POST",
             "/auth/login",

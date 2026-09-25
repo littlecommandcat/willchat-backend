@@ -124,7 +124,22 @@ func (s *ChatService) GetGroup(c *gin.Context) {
 	if group.GroupID == "" {
 		group.GroupID = groupID
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": toGroupResponse(s.snowflake, group)}})
+
+	groupRecord, err := s.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	memberData, err := s.auth.memberByID(group.OwnerID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
+	memberResponse, _ := s.auth.toMemberResponse(memberData)
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": groupResponse, "member": memberResponse}})
 }
 
 func (s *ChatService) JoinGroup(c *gin.Context) {
@@ -152,19 +167,39 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	responseGroupID := s.snowflake.ToGroupID(groupID)
-	responseMemberID := s.snowflake.ToMemberID(memberID)
+	// responseGroupID := s.snowflake.ToGroupID(groupID)
+	// responseMemberID := s.snowflake.ToMemberID(memberID)
+	groupRecord, err := s.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	memberData, err := s.auth.memberByID(memberID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
+	memberResponse, _ := s.auth.toMemberResponse(memberData)
+
 	s.hub.Broadcast(groupID, core.WSEvent{
 		Event: core.WSEventEnum.JoinGroup,
 		Payload: gin.H{
-			"group_id":  responseGroupID,
-			"member_id": responseMemberID,
+			"group":  groupResponse,
+			"member": memberResponse,
 		},
 	})
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"group_id":  responseGroupID,
-		"member_id": responseMemberID,
-	}})
+
+	c.JSON(http.StatusOK, core.Response{
+		Status: "ok",
+		Code:   "success",
+		Data: gin.H{
+			"group":  groupResponse,
+			"member": memberResponse,
+		},
+	})
 }
 
 func (s *ChatService) LeaveGroup(c *gin.Context) {
@@ -206,19 +241,31 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	responseGroupID := s.snowflake.ToGroupID(groupID)
-	responseMemberID := s.snowflake.ToMemberID(memberID)
+	groupRecord, err := s.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	memberData, err := s.auth.memberByID(memberID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
+	memberResponse, _ := s.auth.toMemberResponse(memberData)
 	s.hub.Broadcast(groupID, core.WSEvent{
 		Event: core.WSEventEnum.LeaveGroup,
 		Payload: gin.H{
-			"group_id":  responseGroupID,
-			"member_id": responseMemberID,
+			"group":     groupResponse,
+			"member_id": memberResponse,
 		},
 	})
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"group_id":  responseGroupID,
-		"member_id": responseMemberID,
+		"group":  groupResponse,
+		"member": memberResponse,
 	}})
 }
 
@@ -276,15 +323,32 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	responseGroupID := s.snowflake.ToGroupID(groupID)
+	groupRecord, err := s.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	memberData, err := s.auth.memberByID(memberID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
+	memberResponse, _ := s.auth.toMemberResponse(memberData)
+
+	// responseGroupID := s.snowflake.ToGroupID(groupID)
 	s.hub.Broadcast(groupID, core.WSEvent{
 		Event: core.WSEventEnum.DeleteGroup,
 		Payload: gin.H{
-			"group_id": responseGroupID,
+			"group":  groupResponse,
+			"member": memberResponse,
 		},
 	})
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"group_id": responseGroupID,
+		"group":  groupResponse,
+		"member": memberResponse,
 	}})
 }
 
@@ -543,10 +607,17 @@ func (s *ChatService) GetMember(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	groupRecord, err := s.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"group_id": s.snowflake.ToGroupID(groupID),
-		"member":   memberProfile{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, CreatedAt: s.snowflake.ToTime(member.Id)},
+		"group":  groupResponse,
+		"member": memberProfile{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, CreatedAt: s.snowflake.ToTime(member.Id)},
 	}})
 }
 
@@ -949,7 +1020,7 @@ func (s *Service) memberByID(memberID string) (core.MemberData, error) {
 	if record.ID == "" {
 		return core.MemberData{}, errors.New("invalid redis member record")
 	}
-	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Username: record.Username, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
+	return core.MemberData{Id: s.snowflake.ToMemberID(record.ID), Name: record.Name, Email: normalizeEmail(record.Email), PasswordHash: record.PasswordHash, Token: record.Token}, nil
 }
 
 func (s *Service) memberByEmail(email string) (core.MemberData, error) {

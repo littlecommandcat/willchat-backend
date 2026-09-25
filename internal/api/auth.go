@@ -23,7 +23,7 @@ var (
 	errRedisUnavailable   = errors.New("redis is unavailable")
 )
 
-const maxUsernameLength = 50
+const maxnameLength = 50
 
 type Service struct {
 	redis     *redis.Client
@@ -50,7 +50,7 @@ func (s *Service) Register(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_request", "username is required, email must be valid and password must be at least 8 characters")
 		return
 	}
-	request.Username = strings.TrimSpace(request.Username)
+	request.Name = strings.TrimSpace(request.Name)
 	request.Email = normalizeEmail(request.Email)
 
 	s.mu.Lock()
@@ -72,7 +72,7 @@ func (s *Service) Register(c *gin.Context) {
 	// Pointer is trash
 	block := []string{}
 	read := make(map[string]string)
-	member := core.MemberData{Id: s.snowflake.Next(), Username: request.Username, Email: request.Email, PasswordHash: string(hash), Block: block, Read: read}
+	member := core.MemberData{Id: s.snowflake.Next(), Name: request.Name, Email: request.Email, PasswordHash: string(hash), Block: block, Read: read}
 
 	token, err := s.createToken(member.Id)
 	if err != nil {
@@ -199,7 +199,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_request", "email must be valid and username must be provided")
 		return
 	}
-	if request.Username == nil && request.Email == nil {
+	if request.Name == nil && request.Email == nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "username or email is required")
 		return
 	}
@@ -217,13 +217,13 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		return
 	}
 
-	if request.Username != nil {
-		username := strings.TrimSpace(*request.Username)
-		if core.SafeCompare(username, "") || len([]rune(username)) > maxUsernameLength {
+	if request.Name != nil {
+		username := strings.TrimSpace(*request.Name)
+		if core.SafeCompare(username, "") || len([]rune(username)) > maxnameLength {
 			writeError(c, http.StatusBadRequest, "invalid_username", "username must be between 1 and 50 characters")
 			return
 		}
-		member.Username = username
+		member.Name = username
 	}
 	newEmail := member.Email
 	if request.Email != nil {
@@ -366,7 +366,9 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
-	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Username: member.Username, Email: member.Email, GroupRecords: groupData, Block: member.Block, Read: member.Read}, nil
+	blockData := make([]string, 0, len(member.Block))
+	readData := make(map[string]string, len(member.Read))
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: blockData, Read: readData}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
@@ -415,7 +417,7 @@ func (s *Service) createToken(memberID string) (string, error) {
 
 func (s *Service) storeMember(member core.MemberData) error {
 	key := memberKey(member.Id)
-	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Username: member.Username, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block, Read: member.Read})
+	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Name: member.Name, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block, Read: member.Read})
 	if err != nil {
 		log.Printf("redis member marshal failed key=%s: %v", key, err)
 		return err

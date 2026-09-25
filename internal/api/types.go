@@ -18,14 +18,14 @@ type credentialsRequest struct {
 }
 
 type registerRequest struct {
-	Username string `json:"username" binding:"required,min=1,max=50"`
+	Name     string `json:"name" binding:"required,min=1,max=50"`
 	Email    string `json:"email" binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
 }
 
 type updateProfileRequest struct {
-	Username *string `json:"username"`
-	Email    *string `json:"email" binding:"omitempty,email"`
+	Name  *string `json:"name"`
+	Email *string `json:"email" binding:"omitempty,email"`
 }
 
 type resetPasswordRequest struct {
@@ -36,11 +36,11 @@ type resetPasswordRequest struct {
 // Auth responses and records
 
 type memberResponse struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
 	// GroupIDs     []string      `json:"group_ids"`
-	GroupRecords []groupResponse   `json:"group_data"`
+	GroupRecords []groupResponse   `json:"groups"`
 	Block        []string          `json:"block"`
 	Read         map[string]string `json:"read"`
 }
@@ -48,7 +48,7 @@ type memberResponse struct {
 // memberProfile
 type memberProfile struct {
 	ID        string `json:"id"`
-	Username  string `json:"username"`
+	Name      string `json:"name"`
 	CreatedAt int64  `json:"created_at"`
 }
 
@@ -58,7 +58,7 @@ type tokenRecord struct {
 
 type redisMemberRecord struct {
 	ID           string            `json:"id"`
-	Username     string            `json:"username"`
+	Name         string            `json:"name"`
 	Email        string            `json:"email"`
 	PasswordHash string            `json:"password_hash"`
 	Token        string            `json:"token"`

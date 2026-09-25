@@ -78,7 +78,7 @@ var WSEventEnum = eventType{
 
 type MemberData struct {
 	Id           string            `json:"id"`
-	Username     string            `json:"username"`
+	Name         string            `json:"name"`
 	Email        string            `json:"email"`
 	PasswordHash string            `json:"-"`
 	Token        string            `json:"-"`

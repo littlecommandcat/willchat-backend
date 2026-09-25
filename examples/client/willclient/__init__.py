@@ -1,3 +1,3 @@
 from .client import Client
-
-__all__ = ["Client"]
+from .objects import Member, Message, Group
+__all__ = ["Client", "Member", "Message", "Group"]

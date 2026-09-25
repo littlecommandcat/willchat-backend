@@ -7,6 +7,7 @@ import websockets
 
 from config import request, EMAIL, PASSWORD, BASE_URL
 from .request import Requester
+from .objects import Member, Message, Group
 
 class Client:
     def __init__(self):
@@ -52,7 +53,7 @@ class Client:
         return f"{base}/ws?{query}"
 
     async def start(self, email: str=None, password: str=None, *, token: str=None):
-        
+        self._requester._init_session()
         self._running = True
         if email and password:
             data, token = await self._requester.login(email, password)
@@ -81,14 +82,22 @@ class Client:
                             continue
 
                         # print(event)
-                        event_type = event.get("event")
+                        event_type: str | None = event.get("event")
                         payload = event.get("payload")
 
                         if not event_type:
                             continue
 
-                        await self._dispatch(event_type, payload)
-                        await self._dispatch("event", event_type, payload)
+                        payload_data = payload
+                        # if event_type.startswith("message"):
+                        #     payload_data = Message.from_payload(payload)
+                        # elif event_type.startswith("group"):
+                        #     payload_data = Group.from_payload(payload)
+                        # elif event_type.startswith("member"):
+                        #     payload_data = Member.from_payload(payload)
+                        
+                        await self._dispatch(event_type, payload_data)
+                        await self._dispatch("event", event_type, payload_data)
 
             except asyncio.CancelledError:
                 raise
@@ -116,3 +125,6 @@ class Client:
 
         if not self._requester.closed:
             await self._requester.close()
+
+
+    async def get_group(self, group_id: str) -> None: ...

@@ -11,19 +11,22 @@ async def on_ready():
     print("WebSocket connected")
     print("Waiting for events; press Ctrl+C to stop")
 
-# @client.listen("event")
-# async def on_event(event, payload):
-#     print(f"On event [{event}]: {payload}")
+@client.listen("event")
+async def on_event(event, payload):
+    print(f"On event [{event}]: {payload}")
 
 @client.listen("message_send")
 async def on_message(payload):
     print("MESSAGE:", payload)
 
+@client.listen("message_delete")
+async def on_message(payload):
+    print("DELETE:", payload)
+
 
 @client.listen("group_join")
 async def on_group_join(payload):
     print("JOIN GROUP:", payload)
-
 
 @client.listen("group_leave")
 async def on_group_leave(payload):

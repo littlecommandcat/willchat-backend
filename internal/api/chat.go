@@ -259,7 +259,7 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 			pipe.SRem(ctx, memberGroupsKey(groupMemberID), groupID)
 		}
 		pipe.SRem(ctx, ownedGroupsKey(memberID), groupID)
-		pipe.Del(ctx, groupKey(groupID), groupMembersKey(groupID), messagesKey(groupID))
+		pipe.Del(ctx, groupKey(groupID), groupMembersKey(groupID), groupMessagesKey(groupID))
 		if len(attachmentKeys) > 0 {
 			pipe.Del(ctx, attachmentKeys...)
 		}
@@ -380,17 +380,20 @@ func (s *ChatService) DeleteMessage(c *gin.Context) {
 		writeError(c, http.StatusForbidden, "not_message_author", "member is not message author")
 		return
 	}
-	respMessage, err := s.deleteMessage(groupID, messageID)
+	_, err = s.deleteMessage(groupID, messageID)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "message_not_delete", err.Error())
 		return
 	}
 
+	responseMessage := s.toMessageResponse(message)
+	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: responseMessage})
+
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",
 		Code:   "success",
 		Data: gin.H{
-			"message": respMessage,
+			"message": responseMessage,
 		},
 	})
 }
@@ -480,12 +483,7 @@ func (s *ChatService) getMessage(c *gin.Context, groupID string, memberID string
 		return
 	}
 	if err != nil {
-		log.Printf(
-			"redis message read failed group_id=%s message_id=%s: %v",
-			groupID,
-			messageID,
-			err,
-		)
+		log.Printf("redis message read failed group_id=%s message_id=%s: %v", groupID, messageID, err)
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
@@ -546,7 +544,6 @@ func (s *ChatService) GetMember(c *gin.Context) {
 	}})
 }
 
-// toGroupResponse
 func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse {
 	response := groupResponse{Name: group.Name, CreatedAt: group.CreatedAt}
 	if group.GroupID != "" {
@@ -558,7 +555,6 @@ func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse
 	return response
 }
 
-// toMessageResponse
 func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 	response := messageResponse{
 		Content:   message.Content,
@@ -662,9 +658,6 @@ func (s *ChatService) isMember(groupID, memberID string) bool {
 
 func (s *ChatService) createMessage(groupID, memberID, content string, attachments []core.Attachment, replyTo *core.ReplyTo) (core.Message, []byte, error) {
 	id := s.snowflake.Next()
-	// timestamp :=
-
-	// Set msgType for test
 	message := core.Message{
 		Id:          id,
 		AuthorId:    s.snowflake.ToSnowflake(memberID),
@@ -678,19 +671,22 @@ func (s *ChatService) createMessage(groupID, memberID, content string, attachmen
 	if err != nil {
 		return core.Message{}, nil, err
 	}
-	if err := s.redis.RPush(context.Background(), messagesKey(s.snowflake.ToSnowflake(groupID)), payload).Err(); err != nil {
+	groupID = s.snowflake.ToSnowflake(groupID)
+	if err := s.redis.RPush(context.Background(), groupMessagesKey(groupID), message.Id).Err(); err != nil {
 		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.Id, err)
 		return core.Message{}, nil, err
 	}
-	log.Printf("redis message stored group_id=%s message_id=%s member_id=%s attachments=%d reply_to=%v", groupID, message.Id, memberID, len(attachments), replyTo != nil)
+	if err := s.redis.Set(context.Background(), messagesKey(message.Id), payload, 0).Err(); err != nil {
+		s.redis.Del(context.Background(), groupMessagesKey(groupID))
+		log.Printf("redis message write failed group_id=%s message_id=%s: %v", groupID, message.Id, err)
+		return core.Message{}, nil, err
+	}
 	return message, payload, nil
 }
 
-// storeAttachments compresses
 func (s *ChatService) storeAttachments(images [][]byte) ([]core.Attachment, error) {
 	attachments := make([]core.Attachment, 0, len(images))
 	for _, raw := range images {
-		// I think it's a good idea?
 		compressed, mimeType, width, height, err := compressImage(raw, 1024)
 		if err != nil {
 			s.deleteAttachments(attachments)
@@ -732,15 +728,18 @@ func (s *ChatService) deleteAttachments(attachments []core.Attachment) {
 	}
 }
 
-// groupAttachmentKeys collects the storage keys of every attachment referenced
-// by the group history, so they can be removed together with the group.
 func (s *ChatService) groupAttachmentKeys(groupID string) ([]string, error) {
-	values, err := s.redis.LRange(context.Background(), messagesKey(s.snowflake.ToSnowflake(groupID)), 0, -1).Result()
+	groupID = s.snowflake.ToSnowflake(groupID)
+	messageIDs, err := s.redis.LRange(context.Background(), groupMessagesKey(groupID), 0, -1).Result()
 	if err != nil {
 		return nil, err
 	}
 	keys := make([]string, 0)
-	for _, value := range values {
+	for _, messageID := range messageIDs {
+		value, err := s.redis.Get(context.Background(), messagesKey(messageID)).Result()
+		if err != nil {
+			continue
+		}
 		var message core.Message
 		if err := json.Unmarshal([]byte(value), &message); err != nil {
 			continue
@@ -753,16 +752,20 @@ func (s *ChatService) groupAttachmentKeys(groupID string) ([]string, error) {
 }
 
 func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, error) {
-	values, err := s.redis.LRange(context.Background(), messagesKey(s.snowflake.ToSnowflake(groupID)), -int64(amount), -1).Result()
+	groupID = s.snowflake.ToSnowflake(groupID)
+	messageIDs, err := s.redis.LRange(context.Background(), groupMessagesKey(groupID), -int64(amount), -1).Result()
 	if err != nil {
 		return nil, err
 	}
-
-	messages := make([]core.Message, 0, len(values))
-	for _, value := range values {
+	messages := make([]core.Message, 0, len(messageIDs))
+	for _, messageID := range messageIDs {
+		value, err := s.redis.Get(context.Background(), messagesKey(messageID)).Result()
+		if err != nil {
+			continue
+		}
 		var message core.Message
 		if err := json.Unmarshal([]byte(value), &message); err != nil {
-			return nil, err
+			continue
 		}
 		if message.Status == core.MessageStatusEnum.Deleted {
 			continue
@@ -772,7 +775,6 @@ func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, e
 	return messages, nil
 }
 
-// validateMessageContent
 func validateMessageContent(value string) (string, error) {
 	content := strings.TrimSpace(value)
 	if len([]rune(content)) > maxMessageLength {
@@ -781,56 +783,54 @@ func validateMessageContent(value string) (string, error) {
 	return content, nil
 }
 
-// findMessage scans
 func (s *ChatService) findMessage(groupID, messageID string) (core.Message, error) {
-	values, err := s.redis.LRange(context.Background(), messagesKey(s.snowflake.ToSnowflake(groupID)), 0, -1).Result()
+	groupID = s.snowflake.ToSnowflake(groupID)
+	messageID = s.snowflake.ToSnowflake(messageID)
+	messageIDs, err := s.redis.LRange(context.Background(), groupMessagesKey(groupID), 0, -1).Result()
 	if err != nil {
 		return core.Message{}, err
 	}
-	for _, value := range values {
-		var message core.Message
-		if err := json.Unmarshal([]byte(value), &message); err != nil {
-			return core.Message{}, err
-		}
-		if s.snowflake.ToSnowflake(message.Id) == s.snowflake.ToSnowflake(messageID) {
+	for _, id := range messageIDs {
+		if id == messageID {
+			value, err := s.redis.Get(context.Background(), messagesKey(messageID)).Result()
+			if err != nil {
+				return core.Message{}, err
+			}
+			var message core.Message
+			if err := json.Unmarshal([]byte(value), &message); err != nil {
+				return core.Message{}, err
+			}
 			return message, nil
 		}
 	}
 	return core.Message{}, errMessageNotFound
 }
 
-// deleteMessage
 func (s *ChatService) deleteMessage(groupID, messageID string) (core.Message, error) {
-	messageKey := messagesKey(groupID)
+	messageID = s.snowflake.ToSnowflake(messageID)
 	message, err := s.findMessage(groupID, messageID)
 	if err != nil {
 		return message, err
 	}
-
 	message.Status = core.MessageStatusEnum.Deleted
 	messageJSON, err := json.Marshal(message)
-
 	if err != nil {
 		message.Status = core.MessageStatusEnum.Normal
 		return message, err
 	}
-
-	if err := s.redis.Set(context.Background(), messageKey, messageJSON, 0).Err(); err != nil {
+	if err := s.redis.Set(context.Background(), messagesKey(messageID), messageJSON, 0).Err(); err != nil {
 		message.Status = core.MessageStatusEnum.Normal
 		return message, err
 	}
-	// redisStatus.Err()
 	return message, nil
 }
 
-// sendMessageInput
 type sendMessageInput struct {
 	Content     string
 	ReplyToID   string
 	Attachments [][]byte
 }
 
-// parseSendMessageRequest
 func parseSendMessageRequest(c *gin.Context) (sendMessageInput, error) {
 	if strings.HasPrefix(c.ContentType(), "multipart/form-data") {
 		return parseMultipartMessage(c)
@@ -897,7 +897,6 @@ func readUpload(header *multipart.FileHeader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-// decodeBase64Image
 func decodeBase64Image(value string) ([]byte, error) {
 	payload := strings.TrimSpace(value)
 	if index := strings.Index(payload, ","); strings.HasPrefix(payload, "data:") && index != -1 {
@@ -910,7 +909,6 @@ func decodeBase64Image(value string) ([]byte, error) {
 	return data, nil
 }
 
-// writeSendMessageError maps
 func writeSendMessageError(c *gin.Context, err error) {
 	var maxBytesError *http.MaxBytesError
 	switch {
@@ -1000,5 +998,6 @@ func groupKey(groupID string) string           { return "group:" + groupID }
 func groupMembersKey(groupID string) string    { return "group:" + groupID + ":members" }
 func memberGroupsKey(memberID string) string   { return "member:" + memberID + ":groups" }
 func ownedGroupsKey(memberID string) string    { return "member:" + memberID + ":owned-groups" }
-func messagesKey(groupID string) string        { return "group:" + groupID + ":messages" }
+func groupMessagesKey(groupID string) string   { return "group:" + groupID + ":messages" }
+func messagesKey(messageID string) string      { return "message:" + messageID }
 func attachmentKey(attachmentID string) string { return "attachment:" + attachmentID }

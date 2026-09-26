@@ -45,9 +45,15 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 		return
 	}
 	defer conn.CloseNow()
-
-	client := s.hub.Register(memberID, "")
-	log.Printf("Websocket connected: %s", memberID)
+	member, err := s.auth.memberByID(memberID)
+	responseMember, err := s.auth.toMemberResponse(member, false)
+	groupRecords := responseMember.GroupRecords
+	groupIDs := []string{}
+	for i := range groupRecords {
+		groupIDs = append(groupIDs, s.snowflake.ToSnowflake(groupRecords[i].GroupID))
+	}
+	client := s.hub.Register(s.snowflake.ToSnowflake(memberID), groupIDs)
+	log.Printf("Websocket connected: %s", s.snowflake.ToSnowflake(memberID))
 
 	defer s.hub.Unregister(client)
 

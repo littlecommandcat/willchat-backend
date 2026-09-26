@@ -76,7 +76,7 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		OwnerID:   s.snowflake.ToSnowflake(memberID),
 		CreatedAt: time.Now().UnixMilli(),
 	}
-	groupID := s.snowflake.ToGroupID(group.GroupID)
+	// groupID := s.snowflake.ToGroupID(group.GroupID)
 	if err := s.storeGroup(group); err != nil {
 		log.Printf("redis group write failed group_id=%s: %v", group.GroupID, err)
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
@@ -102,7 +102,7 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	s.hub.Broadcast(groupID, core.WSEvent{
+	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
 		Event:   core.WSEventEnum.CreateGroup,
 		Payload: gin.H{"group": toGroupResponse(s.snowflake, group)},
 	})
@@ -144,7 +144,7 @@ func (s *ChatService) GetGroup(c *gin.Context) {
 
 func (s *ChatService) JoinGroup(c *gin.Context) {
 	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
-	memberID := currentMemberID(c)
+	memberID := s.snowflake.ToSnowflake(currentMemberID(c))
 	if _, err := s.getGroup(groupID); errors.Is(err, redis.Nil) {
 		writeError(c, http.StatusNotFound, "group_not_found", "group not found")
 		return
@@ -183,7 +183,8 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 
 	groupResponse := toGroupResponse(s.snowflake, groupRecord)
 	memberResponse, _ := s.auth.toMemberResponse(memberData, true)
-	s.hub.Broadcast(groupID, core.WSEvent{
+	s.hub.AddGroup(memberID, groupID)
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.JoinGroup,
 		Payload: gin.H{
 			"group":  groupResponse,
@@ -254,7 +255,8 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 
 	groupResponse := toGroupResponse(s.snowflake, groupRecord)
 	memberResponse, _ := s.auth.toMemberResponse(memberData, true)
-	s.hub.Broadcast(groupID, core.WSEvent{
+	s.hub.RemoveGroup(memberID, groupID)
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.LeaveGroup,
 		Payload: gin.H{
 			"group":  groupResponse,
@@ -318,6 +320,7 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 				memberGroupsKey(normalizedMemberID),
 				groupID,
 			)
+			s.hub.RemoveGroup(normalizedMemberID, groupID)
 		}
 
 		// Remove owned-groups
@@ -360,7 +363,7 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	s.hub.Broadcast(groupID, core.WSEvent{
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.DeleteGroup,
 		Payload: gin.H{
 			"group":  groupResponse,
@@ -438,7 +441,7 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		return
 	}
 	responseMessage := s.toMessageResponse(message)
-	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: gin.H{"message": responseMessage}})
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: gin.H{"message": responseMessage}})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage}})
 }
 
@@ -483,7 +486,7 @@ func (s *ChatService) DeleteMessage(c *gin.Context) {
 	}
 
 	responseMessage := s.toMessageResponse(message)
-	s.hub.Broadcast(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: gin.H{"message": responseMessage}})
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: gin.H{"message": responseMessage}})
 
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",

@@ -2,12 +2,13 @@ package core
 
 import (
 	"encoding/json"
+	"log"
 	"sync"
 )
 
 type Client struct {
 	MemberID string
-	GroupID  string
+	GroupID  []string
 	Send     chan []byte
 }
 
@@ -26,7 +27,7 @@ func NewHub() *Hub {
 	}
 }
 
-func (h *Hub) Register(memberID, groupID string) *Client {
+func (h *Hub) Register(memberID string, groupID []string) *Client {
 	client := &Client{MemberID: memberID, GroupID: groupID, Send: make(chan []byte, 16)}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -35,7 +36,40 @@ func (h *Hub) Register(memberID, groupID string) *Client {
 		h.members[memberID] = make(map[*Client]struct{})
 	}
 	h.members[memberID][client] = struct{}{}
+	log.Printf("Register ws as %s, %s", memberID, groupID)
 	return client
+}
+
+func (h *Hub) AddGroup(memberID, groupID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for client := range h.members[memberID] {
+		if containsGroup(client.GroupID, groupID) {
+			continue
+		}
+
+		client.GroupID = append(client.GroupID, groupID)
+	}
+}
+
+func (h *Hub) RemoveGroup(memberID, groupID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for client := range h.members[memberID] {
+		for i, id := range client.GroupID {
+			if id != groupID {
+				continue
+			}
+
+			client.GroupID = append(
+				client.GroupID[:i],
+				client.GroupID[i+1:]...,
+			)
+			break
+		}
+	}
 }
 
 func (h *Hub) Unregister(client *Client) {
@@ -52,9 +86,52 @@ func (h *Hub) CloseMember(memberID string) {
 	}
 }
 
-func (h *Hub) Broadcast(groupID string, event WSEvent) {
-	h.BroadcastAll(event)
+func (h *Hub) BroadcastOnlyMember(memberID string, event WSEvent) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		log.Fatalf("Error: %s", err)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for client := range h.members[memberID] {
+		select {
+		case client.Send <- payload:
+		default:
+			h.closeLocked(client)
+		}
+	}
 }
+
+func (h *Hub) BroadcastOnlyGroup(groupID string, event WSEvent) {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		log.Printf("marshal websocket event failed: %v", err)
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for client := range h.clients {
+		if !containsGroup(client.GroupID, groupID) {
+			log.Printf("Not equal %s and %s", client.GroupID, groupID)
+			continue
+		}
+
+		select {
+		case client.Send <- payload:
+		default:
+			h.closeLocked(client)
+		}
+	}
+}
+
+// func (h *Hub) Broadcast(groupID string, event WSEvent) {
+// 	h.BroadcastAll(event)
+// }
 
 func (h *Hub) BroadcastAll(event WSEvent) {
 	payload, err := json.Marshal(event)
@@ -83,4 +160,13 @@ func (h *Hub) closeLocked(client *Client) {
 		delete(h.members, client.MemberID)
 	}
 	close(client.Send)
+}
+
+func containsGroup(groups []string, groupID string) bool {
+	for _, id := range groups {
+		if id == groupID {
+			return true
+		}
+	}
+	return false
 }

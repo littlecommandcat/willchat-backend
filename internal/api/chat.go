@@ -440,9 +440,11 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	groupRecord, _ := s.getGroup(groupID)
+	responseGroup := toGroupResponse(s.snowflake, groupRecord)
 	responseMessage := s.toMessageResponse(message)
-	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: gin.H{"message": responseMessage}})
-	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage}})
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: gin.H{"message": responseMessage, "group": responseGroup}})
+	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage, "group": responseGroup}})
 }
 
 func (s *ChatService) DeleteMessage(c *gin.Context) {
@@ -485,14 +487,17 @@ func (s *ChatService) DeleteMessage(c *gin.Context) {
 		return
 	}
 
+	groupRecord, _ := s.getGroup(groupID)
+	responseGroup := toGroupResponse(s.snowflake, groupRecord)
 	responseMessage := s.toMessageResponse(message)
-	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: gin.H{"message": responseMessage}})
+	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: gin.H{"message": responseMessage, "group": responseGroup}})
 
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",
 		Code:   "success",
 		Data: gin.H{
 			"message": responseMessage,
+			"group":   responseGroup,
 		},
 	})
 }

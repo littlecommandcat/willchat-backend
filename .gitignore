@@ -4,6 +4,7 @@ __pycache__
 *.log
 .VSCodeCounter
 test.md
+test.json
 
 app_linux_amd64
 app_windows_amd64

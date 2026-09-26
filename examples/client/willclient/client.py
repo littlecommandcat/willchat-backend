@@ -1,4 +1,5 @@
 import asyncio
+import traceback
 import json
 import urllib.parse
 from collections import defaultdict
@@ -32,9 +33,9 @@ class Client:
 
         return decorator
 
-    async def _dispatch(self, event, *args):
+    async def _dispatch(self, event, *args, **kwargs):
         for callback in self._listeners.get(event, []):
-            result = callback(*args)
+            result = callback(*args, **kwargs)
 
             if asyncio.iscoroutine(result):
                 await result
@@ -88,16 +89,20 @@ class Client:
                         if not event_type:
                             continue
 
-                        payload_data = payload
-                        # if event_type.startswith("message"):
-                        #     payload_data = Message.from_payload(payload)
-                        # elif event_type.startswith("group"):
-                        #     payload_data = Group.from_payload(payload)
-                        # elif event_type.startswith("member"):
-                        #     payload_data = Member.from_payload(payload)
-                        
-                        await self._dispatch(event_type, payload_data)
-                        await self._dispatch("event", event_type, payload_data)
+                        print(payload)
+
+                        payload_data = {}
+                        if payload.get("member", {}):
+                            payload_data["member"] = Member.from_payload(payload.get("member", {}))
+                            
+                        if payload.get("message", {}):
+                            payload_data["message"] = Message.from_payload(payload.get("message", {}))
+
+                        if payload.get("group", {}):
+                            payload_data["group"] = Group.from_payload(payload.get("group", {}))
+
+                        await self._dispatch("event", event_type, payload, **payload_data)
+                        await self._dispatch(event_type, **payload_data)
 
             except asyncio.CancelledError:
                 raise
@@ -109,6 +114,7 @@ class Client:
                     await asyncio.sleep(3)
 
             except Exception as error:
+                traceback.print_exc()
                 await self._dispatch("error", error)
 
                 if self._running:

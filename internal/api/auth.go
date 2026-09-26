@@ -86,7 +86,7 @@ func (s *Service) Register(c *gin.Context) {
 		return
 	}
 
-	responseMember, err := s.toMemberResponse(member)
+	responseMember, err := s.toMemberResponse(member, false)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
@@ -130,7 +130,7 @@ func (s *Service) Login(c *gin.Context) {
 		}
 	}
 
-	responseMember, err := s.toMemberResponse(member)
+	responseMember, err := s.toMemberResponse(member, false)
 	if err != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
@@ -178,7 +178,7 @@ func (s *Service) Me(c *gin.Context) {
 	memberID, _ := c.Get("member_id")
 	member, err := s.memberByID(memberID.(string))
 	if err == nil {
-		responseMember, responseErr := s.toMemberResponse(member)
+		responseMember, responseErr := s.toMemberResponse(member, false)
 		if responseErr != nil {
 			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 			return
@@ -248,7 +248,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	responseMember, responseErr := s.toMemberResponse(member)
+	responseMember, responseErr := s.toMemberResponse(member, false)
 	if responseErr != nil {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
@@ -348,7 +348,7 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 	return json.Unmarshal([]byte(value), &record) == nil && s.snowflake.ToSnowflake(record.MemberID) == s.snowflake.ToSnowflake(memberID)
 }
 
-func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, error) {
+func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberResponse, error) {
 	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(s.snowflake.ToSnowflake(member.Id))).Result()
 	if err != nil {
 		return memberResponse{}, err
@@ -368,6 +368,10 @@ func (s *Service) toMemberResponse(member core.MemberData) (memberResponse, erro
 	}
 	blockData := make([]string, 0, len(member.Block))
 	readData := make(map[string]string, len(member.Read))
+	if limit {
+		groupData = make([]groupResponse, 0)
+		return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Block: blockData, GroupRecords: groupData, Read: readData}, nil
+	}
 	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: blockData, Read: readData}, nil
 }
 

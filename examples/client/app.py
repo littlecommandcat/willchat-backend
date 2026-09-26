@@ -13,8 +13,8 @@ async def on_ready():
     print("Waiting for events; press Ctrl+C to stop")
 
 @client.listen("event")
-async def on_event(event, payload):
-    print(f"On event [{event}]: {payload}")
+async def on_event(event, payload, **kwargs):
+    print(f"On event [{event}]: {payload} -> {kwargs}")
 
 @client.listen("message_send")
 async def on_message(message: Message):
@@ -25,20 +25,20 @@ async def on_message(message: Message):
     print("DELETE:", message)
 
 @client.listen("group_ceate")
-async def on_group_join(group: Group):
-    print("CREATE GROUP:", group)
+async def on_group_join(group: Group, member: Member):
+    print("CREATE GROUP:", group, member)
 
 @client.listen("group_delete")
-async def on_group_leave(group: Group):
-    print("DELETE GROUP:", group)
+async def on_group_leave(group: Group, member: Member):
+    print("DELETE GROUP:", group, member)
 
 @client.listen("group_join")
-async def on_group_join(group: Group):
-    print("JOIN GROUP:", group)
+async def on_group_join(group: Group, member: Member):
+    print("JOIN GROUP:", group, member)
 
 @client.listen("group_leave")
-async def on_group_leave(group: Group):
-    print("LEAVE GROUP:", group)
+async def on_group_leave(group: Group, member: Member):
+    print("LEAVE GROUP:", group, member)
 
 
 @client.listen("error")

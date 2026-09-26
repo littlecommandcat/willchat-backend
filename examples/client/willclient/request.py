@@ -1,6 +1,7 @@
-import aiohttp
+from typing import Any
 
-from config import request
+import aiohttp
+from config import BASE_URL
 
 class Requester:
     def __init__(self):
@@ -31,6 +32,49 @@ class Requester:
         self._data.clear()
         self._closed = True
 
+    async def _request(self, method: str, path: str, session: aiohttp.ClientSession, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        response = await session.request(method, f"{BASE_URL}{path}", timeout=5, **kwargs)
+        try:
+            body = await response.json()
+        except ValueError:
+            body = await response.text()
+        # data = body.get("data", {}) if isinstance(body, dict) else body
+        # print("status:", response.status)
+        # print("data:", body)
+        return response, body
+
+    async def post(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        return await self._request(
+            "POST",
+            path=path,
+            session=self._session,
+            **kwargs
+        )
+
+    async def get(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        return await self._request(
+            "GET",
+            path=path,
+            session=self._session,
+            **kwargs
+        )
+
+    async def put(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        return await self._request(
+            "PUT",
+            path=path,
+            session=self._session,
+            **kwargs
+        )
+
+    async def delete(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        return await self._request(
+            "DELETE",
+            path=path,
+            session=self._session,
+            **kwargs
+        )
+
     async def close(self):
         if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:
             await self._session.close()
@@ -39,7 +83,7 @@ class Requester:
 
     async def login(self, email: str, password: str) -> tuple[dict, str | None]:
         # self._init_session()
-        resp, login_body = await request(
+        resp, login_body = await self._request(
             "POST",
             "/auth/login",
             self._session,

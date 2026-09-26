@@ -6,13 +6,15 @@ from collections import defaultdict
 
 import websockets
 
-from config import request, EMAIL, PASSWORD, BASE_URL
+from config import EMAIL, PASSWORD, BASE_URL
 from .request import Requester
 from .objects import Member, Message, Group
+from .exceptions import *
 
 class Client:
     def __init__(self):
         self._listeners = defaultdict(list)
+        self._allowed_status = [200, 201, 202, 204]
         self._socket = None
         self._running = False
         self._requester = Requester()
@@ -133,4 +135,7 @@ class Client:
             await self._requester.close()
 
 
-    async def get_group(self, group_id: str) -> None: ...
+    async def get_group(self, group_id: str) -> None:
+        resp, body = await self._requester.get(f"/api/groups/{group_id}", headers={"Authorization": f"{self._requester.token}"})
+        if resp.status not in self._allowed_status:
+            raise 

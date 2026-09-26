@@ -1,3 +1,4 @@
+from typing import Any
 from dataclasses import dataclass
 
 from .enums import MessageType
@@ -36,10 +37,10 @@ class Member:
 
         groups = [
             Group(
-                name=group["name"],
-                group_id=group["group_id"],
-                owner_id=group["owner_id"],
-                created_at=group["created_at"],
+                name=group.get("name", ""),
+                group_id=group.get("group_id", ""),
+                owner_id=group.get("owner_id", ""),
+                created_at=group.get("created_at", ""),
             )
             for group in data.get("groups", [])
         ]
@@ -63,10 +64,31 @@ class Message:
     @classmethod
     def from_payload(cls, payload: dict) -> "Message":
         data =  payload["data"]["message"] if "data" in payload else payload
+        try:
+            message_type = MessageType(data["type"])
+        except:
+            message_type = MessageType.OTHER
 
         return cls(
             authorid=data["authorid"],
             content=data["content"],
             timestamp=data["timestamp"],
-            type=MessageType(data["type"]),
+            type=message_type,
         )
+
+class _Missing:
+    __slots__ = ()
+
+    def __eq__(self, other) -> bool:
+        return False
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __hash__(self) -> int:
+        return 0
+
+    def __repr__(self):
+        return '...'
+
+MISSING: Any = _Missing()

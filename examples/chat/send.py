@@ -8,5 +8,5 @@ request(
     "POST",
     f"/api/groups/{GROUP_ID}/messages",
     headers={"Authorization": f"{token}"},
-    json={"content": "test Gay"},
+    json={"content": "echo test1"},
 )

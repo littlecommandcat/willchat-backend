@@ -7,7 +7,7 @@ from .enums import MessageType
 @dataclass
 class Group:
     name: str
-    group_id: str
+    id: str
     owner_id: str
     created_at: int
 
@@ -17,7 +17,7 @@ class Group:
 
         return cls(
             name=data["name"],
-            group_id=data["group_id"],
+            id=data["group_id"],
             owner_id=data["owner_id"],
             created_at=data["created_at"],
         )

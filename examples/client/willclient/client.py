@@ -119,9 +119,10 @@ class Client:
                             event_type = EventType.OTHER
 
                         if event_type == EventType.MESSAGE_SEND:
-                            await self._command_handler._process_message(payload_data["message"], payload_data["group"])
+                            await self._command_handler._process_command(payload_data["message"], payload_data["group"])
 
-                        await self._event_handler._dispatch("event", event_type, payload, **payload_data)
+                        await self._event_handler._dispatch("event", event_type, payload, payload_data)
+                        # print("event", event_type, payload, **payload_data)
                         await self._event_handler._dispatch(event_type, **payload_data)
 
             except asyncio.CancelledError:
@@ -153,7 +154,78 @@ class Client:
             await self._requester.close()
 
 
-    async def get_group(self, group_id: str) -> None:
+    async def fetch_group(self, group_id: str) -> Group:
         resp, body = await self._requester.get(f"/api/groups/{group_id}", headers={"Authorization": f"{self._requester.token}"})
+        if resp.status == 404:
+            raise UnknownMember(f"Unknow group id: {group_id}")
+        
         if resp.status not in self._allowed_status:
-            raise 
+            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+
+        if not isinstance(body, dict):
+            raise UnexpectedBody(f"Return unexcepted response body")
+
+        try:
+            group = Group.from_payload(body)
+        except:
+            raise UnexpectedBody(f"Return unexcepted response body")
+
+        return group
+
+    async def fetch_member(self, group_id: str, member_id: str) -> Member:
+        resp, body = await self._requester.get(f"/api/groups/{group_id}/members/{member_id}", headers={"Authorization": f"{self._requester.token}"})
+        if resp.status == 404:
+            raise UnknownMember(f"Unknow group or member id: {group_id}/{member_id}")
+        
+        if resp.status not in self._allowed_status:
+            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+    
+        if not isinstance(body, dict):
+            raise UnexpectedBody(f"Return unexcepted response body")
+    
+        try:
+            member = Member.from_payload(body)
+        except:
+            raise UnexpectedBody(f"Return unexcepted response body")
+    
+        return member
+
+    async def fetch_message(self, group_id: str, message_id: str) -> Message:
+        resp, body = await self._requester.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{self._requester.token}"}, params={"message_id": message_id})
+        if resp.status == 404:
+            raise UnknownMessage(f"Unknow group or message id: {group_id}/{message_id}")
+        
+        if resp.status not in self._allowed_status:
+            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+    
+        if not isinstance(body, dict):
+            raise UnexpectedBody(f"Return unexcepted response body")
+    
+        try:
+            message = Message.from_payload(body)
+        except:
+            raise UnexpectedBody(f"Return unexcepted response body")
+    
+        return message
+
+    async def fetch_bulk_message(self, group_id: str, amount: int) -> list[Message]:
+        resp, body = await self._requester.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{self._requester.token}"}, params={"amount": amount})
+        print(resp, body)
+        if resp.status == 404:
+            raise UnknownGroup(f"Unknow group id: {group_id}")
+        
+        if resp.status not in self._allowed_status:
+            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+    
+        if not isinstance(body, dict):
+            raise UnexpectedBody(f"Return unexcepted response body")
+
+        message_list: list[Message] = []
+        try:
+            messages_body = body.get("data", {}).get("messages", [])
+            for mbody in messages_body:
+                message_list.append(Message.from_payload(mbody))
+        except:
+            raise UnexpectedBody(f"Return unexcepted response body")
+    
+        return message_list

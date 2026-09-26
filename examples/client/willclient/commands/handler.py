@@ -35,7 +35,7 @@ class CommandHandler:
         self._commands[command.name] = command
         print(f"Added {command.name}")
 
-    async def _process_message(self, message: Message, group: Group):
+    async def _process_command(self, message: Message, group: Group):
         content = message.content.strip()
 
         if self._command_prefix:

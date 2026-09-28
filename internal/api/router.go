@@ -12,6 +12,7 @@ import (
 )
 
 var enableProxyChecker = false
+var ipList = make(map[string]int)
 
 func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	r := gin.Default()
@@ -20,8 +21,6 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 		r.Use(middleware.ProxyChecker())
 	}
 
-	r.GET("/health", middleware.RateLimitIP(5, 5*time.Second), Health)
-
 	authService, err := NewService(redisClient, core.NewSnowflake(1))
 	if err != nil {
 		return nil, err
@@ -29,6 +28,14 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	hub := core.NewHub()
 	authService.SetHub(hub)
 	chatService := NewChatService(redisClient, authService.snowflake, authService, hub)
+
+	limitList := make(map[string]*core.IpLimit)
+
+	// IpBlocker
+	r.Use(middleware.GlobalIPLimitBlock(limitList))
+
+	// Health
+	r.GET("/health", middleware.RateLimitIP(5, 5*time.Second), Health)
 
 	// Auth
 	authRoutes := r.Group("/auth", middleware.RateLimitIP(3, 10*time.Second))

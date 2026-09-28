@@ -11,6 +11,72 @@ import (
 	"willchat-backend/internal/core"
 )
 
+const (
+	maxTimeLimit    = 10 * time.Second
+	maxRequestLimit = 200
+)
+
+func GlobalIPLimitBlock(ipList map[string]*core.IpLimit) gin.HandlerFunc {
+	var mu sync.Mutex
+
+	return func(c *gin.Context) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		ip := c.ClientIP()
+		now := time.Now()
+
+		limit, ok := ipList[ip]
+		if !ok {
+			ipList[ip] = &core.IpLimit{
+				Times:    1,
+				LastTime: now,
+				Locked:   false,
+			}
+			c.Next()
+			return
+		}
+
+		if ipList[ip].Locked {
+			c.AbortWithStatusJSON(
+				http.StatusTooManyRequests,
+				core.Response{
+					Status:  "error",
+					Code:    "ip_got_blocked",
+					Message: "IP got blocked",
+					Data:    gin.H{},
+				},
+			)
+			return
+		}
+
+		if now.Sub(limit.LastTime) >= maxTimeLimit {
+			limit.Times = 1
+			limit.LastTime = now
+			c.Next()
+			return
+		}
+
+		limit.Times++
+		limit.LastTime = now
+
+		if limit.Times > maxRequestLimit {
+			c.AbortWithStatusJSON(
+				http.StatusTooManyRequests,
+				core.Response{
+					Status:  "error",
+					Code:    "ip_got_blocked",
+					Message: "IP got blocked",
+					Data:    gin.H{},
+				},
+			)
+			return
+		}
+
+		c.Next()
+	}
+}
+
 func RateLimitToken(max int, window time.Duration) gin.HandlerFunc {
 	var mu sync.Mutex
 	requestsToken := make(map[string][]time.Time)

@@ -1,5 +1,9 @@
 package core
 
+import (
+	"time"
+)
+
 type MessageType int
 type MessageStatus int
 type wsEventType string
@@ -116,4 +120,11 @@ type WSEvent struct {
 
 type WSMessage struct {
 	Content string `json:"content"`
+}
+
+// IpLimiter
+type IpLimit struct {
+	Times    int
+	LastTime time.Time
+	Locked   bool
 }

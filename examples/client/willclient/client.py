@@ -39,7 +39,7 @@ class Client:
                 name=command_name,
             )
 
-            self._command_handler.add_command(command)
+            self._command_handler._add_command(command)
 
             return command
 
@@ -47,7 +47,7 @@ class Client:
 
     def listen(self, event):
         def decorator(func):
-            self._event_handler._listeners[event].append(func)
+            self._event_handler._add_event(event, func)
             return func
 
         return decorator

@@ -18,3 +18,6 @@ class UnknownMessage(WillClientException):
 
 class UnknownMember(WillClientException):
     pass
+
+class UnknownLogin(WillClientException):
+    pass

@@ -2,18 +2,18 @@ from typing import Any
 
 import aiohttp
 from config import BASE_URL
+from .cache import _cache_base
 
 class Requester:
     def __init__(self):
         self._session: aiohttp.ClientSession | None=None
         self._data = {}
-        self._token: str | None=None
         self._closed: bool=True
         # self._init_session()
 
     @property
     def token(self) -> str | None:
-        return self._token
+        return _cache_base.token
 
     @property
     def closed(self) -> bool:
@@ -38,9 +38,7 @@ class Requester:
             body = await response.json()
         except ValueError:
             body = await response.text()
-        # data = body.get("data", {}) if isinstance(body, dict) else body
-        # print("status:", response.status)
-        # print("data:", body)
+            
         return response, body
 
     async def post(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
@@ -102,5 +100,5 @@ class Requester:
             else ""
         )
         self._data = login_body.get("data", {})
-        self._token = token
+        _cache_base.token = token
         return self._data, token

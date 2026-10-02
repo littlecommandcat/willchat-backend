@@ -2,7 +2,7 @@ from typing import Any
 from collections import defaultdict
 import asyncio
 
-class EventHandler:
+class _EventHandler:
     def __init__(self):
         self._listeners = defaultdict(list)
 

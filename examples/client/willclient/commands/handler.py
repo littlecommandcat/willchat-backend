@@ -1,6 +1,6 @@
 import inspect
 
-from ..objects import Message, Group, _Missing, MISSING
+from ..models import Message, Group, MISSING, _Missing
 from .core import Command
 from .data import CommandData
 

@@ -1,5 +1,7 @@
-from .handler import EventHandler
+from .handler import _EventHandler
+from .enums import EventType
 
 __all__ = [
-    "EventHandler"
+    "_EventHandler",
+    "EventType"
 ]

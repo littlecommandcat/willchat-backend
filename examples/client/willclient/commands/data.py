@@ -1,5 +1,5 @@
-from ..objects import Message, Group
 from .core import Command
+from ..models import Message, Group
 
 class CommandData:
     def __init__(self, cmd: Command, message: Message, group: Group):

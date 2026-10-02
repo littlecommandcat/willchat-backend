@@ -6,10 +6,9 @@ import websockets
 
 from config import EMAIL, PASSWORD, BASE_URL
 from .request import Requester
-from .objects import Member, Message, Group, _Missing, MISSING
-from .enums import EventType
+from .models import Member, Message, Group, _Missing, MISSING
 from .commands import Command, CommandHandler
-from .events import EventHandler
+from .events import _EventHandler, EventType
 from .exceptions import *
 
 class Client:
@@ -19,7 +18,7 @@ class Client:
         self._running = False
         self._requester = Requester()
         self._command_handler = CommandHandler(command_prefix)
-        self._event_handler = EventHandler()
+        self._event_handler = _EventHandler()
 
     async def __aenter__(self):
         return self

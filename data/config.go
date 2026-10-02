@@ -1,4 +1,4 @@
-package database
+package data
 
 import (
 	"bufio"
@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const path = ".env"
+const (
+	path          string = ".env"
+	LatestVersion string = "1.0.1"
+)
 
 func LoadEnv() error {
 	file, err := os.Open(path)

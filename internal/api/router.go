@@ -41,18 +41,17 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 	authRoutes := r.Group("/auth", middleware.RateLimitIP(3, 10*time.Second))
 	authRoutes.POST("/register", authService.Register)
 	authRoutes.POST("/login", authService.Login)
+	// I dont know why I write this route
+	// protectedRoutes.POST("/logout", middleware.RateLimit(5, 10*time.Second), authService.Logout)
+	authRoutes.POST("/reset", middleware.RateLimitIP(10, 10*time.Second), authService.RequireToken(), middleware.RateLimitToken(5, 10*time.Second), authService.ResetPassword)
 
 	// Token verification
 	protectedRoutes := r.Group("/api", authService.RequireToken())
 	protectedRoutes.GET("/me", middleware.RateLimitToken(10, 10*time.Second), middleware.RateLimitIP(25, 10*time.Second), authService.Me)
 	protectedRoutes.PUT("/me", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(20, 10*time.Second), authService.UpdateProfile)
 
-	// I dont know why I write this route
-	// protectedRoutes.POST("/logout", middleware.RateLimit(5, 10*time.Second), authService.Logout)
-	authRoutes.POST("/reset", middleware.RateLimitIP(10, 10*time.Second), authService.RequireToken(), middleware.RateLimitToken(5, 10*time.Second), authService.ResetPassword)
-
 	// Group
-	protected := r.Group("/api/groups", authService.RequireToken())
+	protected := protectedRoutes.Group("/groups", authService.RequireToken())
 	protected.POST("", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.CreateGroup)
 	protected.GET("/:group_id", middleware.RateLimitToken(7, 10*time.Second), middleware.RateLimitIP(20, 10*time.Second), chatService.GetGroup)
 	protected.DELETE("/:group_id", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.DeleteGroup)

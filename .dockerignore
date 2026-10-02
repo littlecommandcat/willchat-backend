@@ -3,7 +3,7 @@
 !go.sum
 !cmd/
 !cmd/**
-!database/
-!database/**
+!data/
+!data/**
 !internal/
 !internal/**

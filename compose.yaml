@@ -6,8 +6,8 @@ services:
     environment:
       PORT: "8080"
       GIN_MODE: release
-      # "redis:6379" encoded with XOR key 53, as required by RedisClient.
-      REDIS_ADDR: "4750515c460f0306020c"
+      # "redis:6379" encoded with XOR key <key>, as required by RedisClient.
+      REDIS_ADDR: ""
       REDIS_PASSWORD: ""
       REDIS_DB: "0"
     depends_on:

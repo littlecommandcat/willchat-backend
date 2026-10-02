@@ -6,6 +6,10 @@ import (
 	"sync"
 )
 
+var (
+	ConnectionCount int = 0
+)
+
 type Client struct {
 	MemberID string
 	GroupID  []string
@@ -17,6 +21,17 @@ type Hub struct {
 	clients map[*Client]struct{}
 	members map[string]map[*Client]struct{}
 	closed  map[*Client]struct{}
+}
+
+func deleteConnection() {
+	ConnectionCount -= 1
+	if ConnectionCount < 0 {
+		ConnectionCount = 0
+	}
+}
+
+func addConnection() {
+	ConnectionCount += 1
 }
 
 func NewHub() *Hub {
@@ -37,6 +52,7 @@ func (h *Hub) Register(memberID string, groupID []string) *Client {
 	}
 	h.members[memberID][client] = struct{}{}
 	log.Printf("Register ws as %s, %s", memberID, groupID)
+	addConnection()
 	return client
 }
 
@@ -160,6 +176,7 @@ func (h *Hub) closeLocked(client *Client) {
 		delete(h.members, client.MemberID)
 	}
 	close(client.Send)
+	deleteConnection()
 }
 
 func containsGroup(groups []string, groupID string) bool {

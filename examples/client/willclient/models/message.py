@@ -1,23 +1,15 @@
-from enum import Enum
+from __future__ import annotations
 
-class MessageType(Enum):
-    NORMAL = 0
-    REFRENCE = 1
-    DEV = 2
-    OTHER = 3
+from dataclasses import dataclass
 
+from .enums import MessageType
+
+@dataclass
 class Message:
-    def __init__(
-        self,
-        authorid: str,
-        content: str,
-        timestamp: int,
-        type: "MessageType"
-    ):
-        self.authorid: str = authorid
-        self.content: str = content
-        self.timestamp: int = timestamp
-        self.type: "MessageType" = type
+    authorid: str
+    content: str
+    timestamp: int
+    type: "MessageType"
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Message":

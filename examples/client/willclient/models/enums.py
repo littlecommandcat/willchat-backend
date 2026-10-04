@@ -12,3 +12,9 @@ class EventType(str, Enum):
     EVENT = "event"
     ERROR = "error"
     OTHER = "other"
+
+class MessageType(Enum):
+    NORMAL = 0
+    REFRENCE = 1
+    DEV = 2
+    OTHER = 3

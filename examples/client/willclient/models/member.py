@@ -1,19 +1,17 @@
-from .group import Group
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
+if TYPE_CHECKING:
+    from .group import Group
+
+@dataclass
 class Member:
-    def __init__(
-        self,
-        name: str,
-        id: str,
-        groups: list["Group"],
-        block: list,
-        read: dict[str, str]
-    ):
-        self.name: str = name
-        self.id: str = id
-        self.groups: list["Group"] = groups
-        self.block: list = block
-        self.read: dict[str, str] = read
+    name: str
+    id: str = id
+    groups: list["Group"]
+    block: list
+    read: dict[str, str]
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Member":

@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 import aiohttp
 
 from exceptions import UnknownLogin
@@ -5,18 +9,12 @@ from cache import _cache_base
 from config import BASE_URL
 from ..utils import raise_not_allowed_error, is_not_allowed_code
 
+@dataclass
 class Group:
-    def __init__(
-        self,
-        name: str,
-        id: str,
-        owner_id: str,
-        created_at: int
-    ):
-        self.name: str = name
-        self.id: str = id
-        self.owner_id: str = owner_id
-        self.created_at: int = created_at
+    name: str
+    id: str
+    owner_id: str
+    created_at: int
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Group":

@@ -1,15 +1,15 @@
+from __future__ import annotations
+
 from typing import Any
 
 import aiohttp
 from config import BASE_URL
 from .cache import _cache_base
 
-class Requester:
+class _Requester:
     def __init__(self):
-        self._session: aiohttp.ClientSession | None=None
         self._data = {}
         self._closed: bool=True
-        # self._init_session()
 
     @property
     def token(self) -> str | None:
@@ -19,16 +19,8 @@ class Requester:
     def closed(self) -> bool:
         return self._closed
 
-    def _init_session(self) -> None:
-        self._closed = False
-        if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:
-            return
-        
-        self._session = aiohttp.ClientSession()
-        # return self._session
-
     def _cleanup(self):
-        self._session = None
+        _cache_base.session = None
         self._data.clear()
         self._closed = True
 
@@ -45,7 +37,7 @@ class Requester:
         return await self._request(
             "POST",
             path=path,
-            session=self._session,
+            session=_cache_base.session,
             **kwargs
         )
 
@@ -53,7 +45,7 @@ class Requester:
         return await self._request(
             "GET",
             path=path,
-            session=self._session,
+            session=_cache_base.session,
             **kwargs
         )
 
@@ -61,7 +53,7 @@ class Requester:
         return await self._request(
             "PUT",
             path=path,
-            session=self._session,
+            session=_cache_base.session,
             **kwargs
         )
 
@@ -69,22 +61,21 @@ class Requester:
         return await self._request(
             "DELETE",
             path=path,
-            session=self._session,
+            session=_cache_base.session,
             **kwargs
         )
 
     async def close(self):
-        if isinstance(self._session, aiohttp.ClientSession) and not self._session.closed:
-            await self._session.close()
+        if isinstance(_cache_base.session, aiohttp.ClientSession) and not _cache_base.session.closed:
+            await _cache_base.session.close()
 
         self._cleanup()
 
     async def login(self, email: str, password: str) -> tuple[dict, str | None]:
-        # self._init_session()
         resp, login_body = await self._request(
             "POST",
             "/auth/login",
-            self._session,
+            _cache_base.session,
             json={
                 "email": email,
                 "password": password,
@@ -102,3 +93,6 @@ class Requester:
         self._data = login_body.get("data", {})
         _cache_base.token = token
         return self._data, token
+
+
+RequestManager = _Requester()

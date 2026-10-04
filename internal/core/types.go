@@ -128,3 +128,12 @@ type IpLimit struct {
 	LastTime time.Time
 	Locked   bool
 }
+
+// Turnstile
+type TurnstileResponse struct {
+	Success     bool     `json:"success"`
+	ChallengeTS string   `json:"challenge_ts"`
+	Hostname    string   `json:"hostname"`
+	Action      string   `json:"action"`
+	ErrorCodes  []string `json:"error-codes"`
+}

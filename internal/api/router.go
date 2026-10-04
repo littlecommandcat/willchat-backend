@@ -39,11 +39,11 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 
 	// Auth
 	authRoutes := r.Group("/auth", middleware.RateLimitIP(3, 10*time.Second))
-	authRoutes.POST("/register", authService.Register)
+	authRoutes.POST("/register", authService.Register, middleware.HumanChecker())
 	authRoutes.POST("/login", authService.Login)
 	// I dont know why I write this route
 	// protectedRoutes.POST("/logout", middleware.RateLimit(5, 10*time.Second), authService.Logout)
-	authRoutes.POST("/reset", middleware.RateLimitIP(10, 10*time.Second), authService.RequireToken(), middleware.RateLimitToken(5, 10*time.Second), authService.ResetPassword)
+	authRoutes.POST("/reset", middleware.RateLimitIP(10, 10*time.Second), authService.RequireToken(), middleware.RateLimitToken(5, 10*time.Second), middleware.HumanChecker(), authService.ResetPassword)
 
 	// Token verification
 	protectedRoutes := r.Group("/api", authService.RequireToken())
@@ -52,11 +52,11 @@ func Router(redisClient *redis.Client) (*gin.Engine, error) {
 
 	// Group
 	protected := protectedRoutes.Group("/groups", authService.RequireToken())
-	protected.POST("", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.CreateGroup)
+	protected.POST("", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), middleware.HumanChecker(), chatService.CreateGroup)
 	protected.GET("/:group_id", middleware.RateLimitToken(7, 10*time.Second), middleware.RateLimitIP(20, 10*time.Second), chatService.GetGroup)
 	protected.DELETE("/:group_id", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.DeleteGroup)
-	protected.POST("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.JoinGroup)
-	protected.DELETE("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.LeaveGroup)
+	protected.POST("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), middleware.HumanChecker(), chatService.JoinGroup)
+	protected.DELETE("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), middleware.HumanChecker(), chatService.LeaveGroup)
 	protected.GET("/:group_id/members/:member_id", middleware.RateLimitToken(7, 5*time.Second), middleware.RateLimitIP(14, 5*time.Second), chatService.GetMember)
 	protected.POST("/:group_id/messages", middleware.RateLimitToken(10, 5*time.Second), middleware.RateLimitIP(25, 10*time.Second), chatService.SendMessage)
 	protected.DELETE("/:group_id/messages", middleware.RateLimitToken(7, 5*time.Second), middleware.RateLimitIP(14, 10*time.Second), chatService.DeleteMessage)

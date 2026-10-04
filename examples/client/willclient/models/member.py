@@ -15,7 +15,7 @@ class Member:
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Member":
-        data = payload["data"]["member"] if "data" in payload else payload
+        member_payload = payload["payload"]["member"] if "payload" in payload else payload
 
         groups = [
             Group(
@@ -24,13 +24,13 @@ class Member:
                 owner_id=group.get("owner_id", ""),
                 created_at=group.get("created_at", ""),
             )
-            for group in data.get("groups", [])
+            for group in member_payload.get("groups", [])
         ]
 
         return cls(
-            name=data["name"],
-            id=data["id"],
+            name=member_payload.get("name", ""),
+            id=member_payload.get("id", ""),
             groups=groups,
-            block=data.get("block", []),
-            read=data.get("read", {}),
+            block=member_payload.get("block", []),
+            read=member_payload.get("read", {}),
         )

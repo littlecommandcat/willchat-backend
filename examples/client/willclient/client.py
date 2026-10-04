@@ -8,11 +8,11 @@ import websockets
 
 from config import EMAIL, PASSWORD, BASE_URL
 from .request import RequestManager
-from .models import Member, Message, Group
+from .models import Member, Message, Group, ErrorType
 from .commands import Command, CommandHandler
 from .events import EventHandler, EventType
 from .cache import _cache_base
-from .utils import MISSING
+from .utils import MISSING, is_not_allowed_code, raise_code_error
 from .exceptions import *
 
 class Client:
@@ -23,6 +23,9 @@ class Client:
         self.command_handler = CommandHandler(command_prefix)
         self.event_handler = EventHandler()
 
+    def __enter__(self) -> None:
+        raise TypeError("Use async with instead")
+    
     async def __aenter__(self):
         return self
 
@@ -110,7 +113,7 @@ class Client:
                             payload_data["member"] = Member.from_payload(payload.get("member", {}))
                             
                         if payload.get("message", {}):
-                            payload_data["message"] = Message.from_payload(payload.get("message", {}))
+                            payload_data["message"] = Message.from_payload(payload)
 
                         if payload.get("group", {}):
                             payload_data["group"] = Group.from_payload(payload.get("group", {}))
@@ -158,11 +161,8 @@ class Client:
 
     async def fetch_group(self, group_id: str) -> Group:
         resp, body = await RequestManager.get(f"/api/groups/{group_id}", headers={"Authorization": f"{RequestManager.token}"})
-        if resp.status == 404:
-            raise UnknownMember(f"Unknow group id: {group_id}")
-        
-        if resp.status not in self._allowed_status:
-            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+        if is_not_allowed_code(resp.status):
+            raise_code_error(resp.status, ErrorType.GROUP)
 
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")
@@ -176,11 +176,8 @@ class Client:
 
     async def fetch_member(self, group_id: str, member_id: str) -> Member:
         resp, body = await RequestManager.get(f"/api/groups/{group_id}/members/{member_id}", headers={"Authorization": f"{RequestManager.token}"})
-        if resp.status == 404:
-            raise UnknownMember(f"Unknow group or member id: {group_id}/{member_id}")
-        
-        if resp.status not in self._allowed_status:
-            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+        if is_not_allowed_code(resp.status):
+            raise_code_error(resp.status, ErrorType.MEMBER)
     
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")
@@ -194,11 +191,8 @@ class Client:
 
     async def fetch_message(self, group_id: str, message_id: str) -> Message:
         resp, body = await RequestManager.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{RequestManager.token}"}, params={"message_id": message_id})
-        if resp.status == 404:
-            raise UnknownMessage(f"Unknow group or message id: {group_id}/{message_id}")
-        
-        if resp.status not in self._allowed_status:
-            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+        if is_not_allowed_code(resp.status):
+            raise_code_error(resp.status, ErrorType.MESSAGE)
     
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")
@@ -212,12 +206,8 @@ class Client:
 
     async def fetch_bulk_message(self, group_id: str, amount: int) -> list[Message]:
         resp, body = await RequestManager.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{RequestManager.token}"}, params={"amount": amount})
-        print(resp, body)
-        if resp.status == 404:
-            raise UnknownGroup(f"Unknow group id: {group_id}")
-        
-        if resp.status not in self._allowed_status:
-            raise UnexpectedStatus(f"Return unexcepted status code: {resp.status}")
+        if is_not_allowed_code(resp.status):
+            raise_code_error(resp.status, ErrorType.GROUP)
     
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")

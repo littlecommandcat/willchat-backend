@@ -13,6 +13,14 @@ class EventType(str, Enum):
     ERROR = "error"
     OTHER = "other"
 
+class ErrorType(str, Enum):
+    MESSAGE = "message"
+    GROUP = "group"
+    MEMBER = "member"
+    AUTH = "auth"
+
+    OTHER = "other"
+
 class MessageType(Enum):
     NORMAL = 0
     REFRENCE = 1

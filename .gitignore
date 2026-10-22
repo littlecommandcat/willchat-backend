@@ -11,4 +11,4 @@ app_windows_amd64
 app
 
 crypto.py
-config.py
+**/config.py

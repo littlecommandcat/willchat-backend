@@ -20,6 +20,9 @@ async def on_event(event: EventType, *args):
 
 @client.listen("message_send")
 async def on_message_send(message: Message, group: Group):
+    me = client.member.id
+    if message.authorid == client.member.id:
+        return
     print("MESSAGE:", message.content, group.name)
 
 @client.listen("message_delete")

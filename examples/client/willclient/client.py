@@ -22,6 +22,7 @@ class Client:
         self._running = False
         self.command_handler = CommandHandler(command_prefix)
         self.event_handler = EventHandler()
+        self.member: Member | None = None
 
     def __enter__(self) -> None:
         raise TypeError("Use async with instead")
@@ -90,7 +91,7 @@ class Client:
                 ) as socket:
                     self._socket = socket
 
-                    await self.event_handler.dispatch("ready")
+                    # await self.event_handler.dispatch("ready")
 
                     async for raw_event in socket:
                         try:

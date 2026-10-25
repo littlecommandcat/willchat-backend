@@ -55,6 +55,16 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 	client := s.hub.Register(s.snowflake.ToSnowflake(memberID), groupIDs)
 	log.Printf("Websocket connected: %s", s.snowflake.ToSnowflake(memberID))
 
+	// Ready event
+	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
+		Event: core.WSEventEnum.Ready,
+		Payload: gin.H{
+			"id":     responseMember.ID,
+			"name":   responseMember.Name,
+			"groups": responseMember.GroupRecords,
+		},
+	})
+
 	defer s.hub.Unregister(client)
 
 	ctx, cancel := context.WithCancel(c.Request.Context())

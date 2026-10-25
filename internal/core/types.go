@@ -56,6 +56,7 @@ var MessageStatusEnum = messageStatusEnum{
 }
 
 type eventType struct {
+	Ready         wsEventType
 	SendMessage   wsEventType
 	DeleteMessage wsEventType
 	ProfileUpdate wsEventType
@@ -66,6 +67,9 @@ type eventType struct {
 }
 
 var WSEventEnum = eventType{
+	// Connection
+	Ready: wsEventType("ready"),
+
 	// Message
 	SendMessage:   wsEventType(eventMessageType + "send"),
 	DeleteMessage: wsEventType(eventMessageType + "delete"),

@@ -9,6 +9,8 @@ class EventType(str, Enum):
     GROUP_JOIN = "group_join"
     GROUP_LEAVE = "group_leave"
 
+    READY = "ready"
+    DISCONNECT = "disconnect"
     EVENT = "event"
     ERROR = "error"
     OTHER = "other"

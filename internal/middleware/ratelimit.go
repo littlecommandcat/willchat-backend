@@ -20,12 +20,11 @@ func GlobalIPLimitBlock(ipList map[string]*core.IpLimit) gin.HandlerFunc {
 	var mu sync.Mutex
 
 	return func(c *gin.Context) {
-		mu.Lock()
-		defer mu.Unlock()
-
 		ip := c.ClientIP()
 		now := time.Now()
 
+		var blocked bool
+		mu.Lock()
 		limit, ok := ipList[ip]
 		if !ok {
 			ipList[ip] = &core.IpLimit{
@@ -33,34 +32,21 @@ func GlobalIPLimitBlock(ipList map[string]*core.IpLimit) gin.HandlerFunc {
 				LastTime: now,
 				Locked:   false,
 			}
-			c.Next()
-			return
-		}
-
-		if ipList[ip].Locked {
-			c.AbortWithStatusJSON(
-				http.StatusTooManyRequests,
-				core.Response{
-					Status:  "error",
-					Code:    "ip_got_blocked",
-					Message: "IP got blocked",
-					Data:    gin.H{},
-				},
-			)
-			return
-		}
-
-		if now.Sub(limit.LastTime) >= maxTimeLimit {
+		} else if limit.Locked {
+			blocked = true
+		} else if now.Sub(limit.LastTime) >= maxTimeLimit {
 			limit.Times = 1
 			limit.LastTime = now
-			c.Next()
-			return
+		} else {
+			limit.Times++
+			limit.LastTime = now
+			if limit.Times > maxRequestLimit {
+				blocked = true
+			}
 		}
+		mu.Unlock()
 
-		limit.Times++
-		limit.LastTime = now
-
-		if limit.Times > maxRequestLimit {
+		if blocked {
 			c.AbortWithStatusJSON(
 				http.StatusTooManyRequests,
 				core.Response{

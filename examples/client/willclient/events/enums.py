@@ -11,6 +11,7 @@ class EventType(str, Enum):
 
     READY = "ready"
     DISCONNECT = "disconnect"
+    CLOSE = "close"
     EVENT = "event"
     ERROR = "error"
     OTHER = "other"

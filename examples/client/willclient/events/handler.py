@@ -36,7 +36,18 @@ class EventHandler:
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
 
-    async def close(self):
+    async def wait_for_tasks(self):
+        current = asyncio.current_task()
+
+        tasks = [
+            task for task in self._tasks
+            if task is not current and not task.done()
+        ]
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def clear_tasks(self):
         tasks = list(self._tasks)
 
         for task in tasks:

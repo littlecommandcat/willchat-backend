@@ -135,6 +135,11 @@ class Client:
                             if not event_type:
                                 continue
 
+                            try:
+                                event_type = EventType(event_type)
+                            except ValueError:
+                                event_type = EventType.OTHER
+
                             # READY
                             if event_type == EventType.READY:
                                 if not self._ready.is_set():
@@ -145,11 +150,6 @@ class Client:
                             elif not self._ready.is_set():
                                 continue
 
-                            try:
-                                event_type = EventType(event_type)
-                            except ValueError:
-                                event_type = EventType.OTHER
-
                             if not isinstance(payload, dict):
                                 payload = {}
 
@@ -159,7 +159,7 @@ class Client:
                                 payload_data["member"] = Member.from_payload(payload["member"])
 
                             if payload.get("message"):
-                                payload_data["message"] = Message.from_payload(payload)
+                                payload_data["message"] = Message.from_payload(payload["message"])
 
                             if payload.get("group"):
                                 payload_data["group"] = Group.from_payload(payload["group"])
@@ -170,7 +170,7 @@ class Client:
                                 group: Group = payload_data.get("group")
 
                                 if message is not None and group is not None and message.authorid != self._member.id:
-                                    await self.command_handler._process_command(message, group)
+                                    self.command_handler._process_command(message, group)
 
                             # EVENTS
                             self.event_handler.dispatch(
@@ -206,7 +206,9 @@ class Client:
             self._member = None
             self._closed.set()
             self._start_task = None
-
+            await self.event_handler.clear_tasks()
+            self.event_handler.dispatch(EventType.CLOSE)
+            await self.event_handler.wait_for_tasks()
             if not RequestManager.closed:
                 await RequestManager.close()
 

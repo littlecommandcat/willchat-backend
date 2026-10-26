@@ -15,6 +15,9 @@ func main() {
 		log.Fatal(err)
 	}
 	adr := os.Getenv("PORT")
+	if adr == "" {
+		adr = "8080"
+	}
 	redisClient := data.RedisClient()
 	redisContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

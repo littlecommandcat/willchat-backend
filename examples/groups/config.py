@@ -3,9 +3,9 @@ import json
 import requests
 
 
-BASE_URL = "http://localhost:8080"
-EMAIL = "testtest1@gmail.com"
-PASSWORD = "1231231234"
+BASE_URL = "http://26.174.248.219:8080"
+EMAIL = "123456789@gmail.com"
+PASSWORD = "123456789"
 USERNAME = "testtest1"
 GROUP_ID = "gr-891521676691378176"
 NEW_PASSWORD = "12312312345"

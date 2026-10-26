@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import aiohttp
 
@@ -19,6 +19,9 @@ class Message:
     timestamp: int
     type: "MessageType"
     group: "Group" | None
+    attachments: list = field(default_factory=list)
+    reply_to: dict | None = None
+    status: str = ""
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Message":
@@ -41,6 +44,9 @@ class Message:
             timestamp=message_payload.get("timestamp", -1),
             type=message_type,
             group=group,
+            attachments=message_payload.get("attachments", []) or [],
+            reply_to=message_payload.get("reply_to"),
+            status=message_payload.get("status", ""),
         )
 
     async def reply_message(

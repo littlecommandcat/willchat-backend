@@ -12,7 +12,23 @@ from .models import Member, Message, Group, ErrorType
 from .events import EventHandler, EventType
 from .cache import _cache_base
 from .utils import is_not_allowed_code, raise_code_error
-from .exceptions import *
+from .exceptions import (
+    APIError,
+    WillClientException,
+    WillClientForbidden,
+    WillClientUnauthorized,
+    WillClientUnknown,
+    UnexpectedBody,
+    UnexpectedStatus,
+    FailedConnection,
+    UnknownGroup,
+    UnknownMessage,
+    UnknownMember,
+    UnknownLogin,
+    UnknownSession,
+    UnknownClient,
+    TooManyRequests,
+)
 
 class Client:
     def __init__(self):
@@ -286,10 +302,19 @@ class Client:
     
         return message
 
+    def _raise_group_error(self, resp, body) -> None:
+        # Prefer backend message/code when present; fall back to status-code defaults.
+        if isinstance(body, dict):
+            message = body.get("message") or ""
+            code = body.get("code") or ""
+            if message or code:
+                raise APIError(code or str(resp.status), message)
+        raise_code_error(resp.status, ErrorType.GROUP)
+
     async def create_group(self, name: str) -> Group:
         resp, body = await RequestManager.post("/api/groups", headers={"Authorization": f"{RequestManager.token}"}, json={"name": name})
         if is_not_allowed_code(resp.status):
-            raise_code_error(resp.status, ErrorType.GROUP)
+            self._raise_group_error(resp, body)
 
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")
@@ -308,14 +333,14 @@ class Client:
         return group
 
     async def delete_group(self, group_id: str) -> None:
-        resp, _ = await RequestManager.delete(f"/api/groups/{group_id}", headers={"Authorization": f"{RequestManager.token}"})
+        resp, body = await RequestManager.delete(f"/api/groups/{group_id}", headers={"Authorization": f"{RequestManager.token}"})
         if is_not_allowed_code(resp.status):
-            raise_code_error(resp.status, ErrorType.GROUP)
+            self._raise_group_error(resp, body)
 
     async def join_group(self, group_id: str) -> Group:
         resp, body = await RequestManager.post(f"/api/groups/{group_id}/members", headers={"Authorization": f"{RequestManager.token}"}, json={})
         if is_not_allowed_code(resp.status):
-            raise_code_error(resp.status, ErrorType.GROUP)
+            self._raise_group_error(resp, body)
 
         if not isinstance(body, dict):
             raise UnexpectedBody(f"Return unexcepted response body")
@@ -334,9 +359,9 @@ class Client:
         return group
 
     async def leave_group(self, group_id: str) -> None:
-        resp, _ = await RequestManager.delete(f"/api/groups/{group_id}/members", headers={"Authorization": f"{RequestManager.token}"})
+        resp, body = await RequestManager.delete(f"/api/groups/{group_id}/members", headers={"Authorization": f"{RequestManager.token}"})
         if is_not_allowed_code(resp.status):
-            raise_code_error(resp.status, ErrorType.GROUP)
+            self._raise_group_error(resp, body)
 
     async def fetch_bulk_message(self, group_id: str, amount: int) -> list[Message]:
         resp, body = await RequestManager.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{RequestManager.token}"}, params={"amount": amount})

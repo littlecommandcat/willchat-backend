@@ -42,3 +42,11 @@ class WillClientUnauthorized(WillClientException):
 # Other
 class TooManyRequests(WillClientException):
     pass
+
+
+class APIError(WillClientException):
+    """API error carrying the backend error code and message."""
+    def __init__(self, code: str, message: str):
+        super().__init__(message or code or "request failed")
+        self.code = code
+        self.message = message or code or "request failed"

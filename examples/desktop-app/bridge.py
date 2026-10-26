@@ -64,7 +64,9 @@ class Bridge(QObject):
                 result = f.result()
             except Exception as exc:
                 logger.exception("[bridge] request %s failed", name)
-                result = json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+                code = getattr(exc, "code", "") or ""
+                error = getattr(exc, "message", "") or str(exc)
+                result = json.dumps({"ok": False, "error": error, "code": code}, ensure_ascii=False)
             payload = {"result": result}
             if extra:
                 payload.update(extra)
@@ -93,6 +95,10 @@ class Bridge(QObject):
             "content": m.content,
             "timestamp": m.timestamp,
             "type": m.type.value if hasattr(m.type, "value") else 0,
+            "attachments": m.attachments or [],
+            "reply_to": m.reply_to,
+            "status": m.status,
+            "group": {"id": m.group.id, "name": m.group.name} if m.group else None,
         }
 
     def _member_name(self, member_id: str) -> str:
@@ -371,7 +377,9 @@ class Bridge(QObject):
             await group.send_message(content)
         except Exception as exc:
             logger.exception("[bridge] send message failed for group %s", group_id)
-            return json.dumps({"ok": False, "error": f"傳送失敗：{exc}"}, ensure_ascii=False)
+            code = getattr(exc, "code", "") or ""
+            error = getattr(exc, "message", "") or str(exc)
+            return json.dumps({"ok": False, "error": f"傳送失敗：{error}", "code": code}, ensure_ascii=False)
         return json.dumps({"ok": True}, ensure_ascii=False)
 
     @pyqtSlot(str, result=str)
@@ -385,7 +393,9 @@ class Bridge(QObject):
             group = await self.client.create_group(name)
         except Exception as exc:
             logger.exception("[bridge] create group failed")
-            return json.dumps({"ok": False, "error": f"建立群組失敗：{exc}"}, ensure_ascii=False)
+            code = getattr(exc, "code", "") or ""
+            error = getattr(exc, "message", "") or str(exc)
+            return json.dumps({"ok": False, "error": f"建立群組失敗：{error}", "code": code}, ensure_ascii=False)
         self._upsert_group(group)
         self._emit("group_create", {"group": self._ser_group(group)})
         return json.dumps({"ok": True, "group": self._ser_group(group)}, ensure_ascii=False)
@@ -399,7 +409,9 @@ class Bridge(QObject):
             await self.client.delete_group(group_id)
         except Exception as exc:
             logger.exception("[bridge] delete group failed for group %s", group_id)
-            return json.dumps({"ok": False, "error": f"刪除群組失敗：{exc}"}, ensure_ascii=False)
+            code = getattr(exc, "code", "") or ""
+            error = getattr(exc, "message", "") or str(exc)
+            return json.dumps({"ok": False, "error": f"刪除群組失敗：{error}", "code": code}, ensure_ascii=False)
         self._groups.pop(group_id, None)
         self._messages.pop(group_id, None)
         self._emit("group_delete", {"group_id": group_id})
@@ -414,7 +426,9 @@ class Bridge(QObject):
             group = await self.client.join_group(group_id)
         except Exception as exc:
             logger.exception("[bridge] join group failed for group %s", group_id)
-            return json.dumps({"ok": False, "error": f"加入群組失敗：{exc}"}, ensure_ascii=False)
+            code = getattr(exc, "code", "") or ""
+            error = getattr(exc, "message", "") or str(exc)
+            return json.dumps({"ok": False, "error": f"加入群組失敗：{error}", "code": code}, ensure_ascii=False)
         self._upsert_group(group)
         self._emit("group_join", {
             "group_id": group.id,
@@ -431,7 +445,9 @@ class Bridge(QObject):
             await self.client.leave_group(group_id)
         except Exception as exc:
             logger.exception("[bridge] leave group failed for group %s", group_id)
-            return json.dumps({"ok": False, "error": f"退出群組失敗：{exc}"}, ensure_ascii=False)
+            code = getattr(exc, "code", "") or ""
+            error = getattr(exc, "message", "") or str(exc)
+            return json.dumps({"ok": False, "error": f"退出群組失敗：{error}", "code": code}, ensure_ascii=False)
         self._groups.pop(group_id, None)
         self._messages.pop(group_id, None)
         self._emit("group_leave", {

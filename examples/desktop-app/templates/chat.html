@@ -32,6 +32,8 @@
         .chat-input button { padding: 10px 20px; background: #000; color: #fff; border: 1px solid #000; border-radius: 4px; cursor: pointer; }
         .chat-input button:disabled { background: #888; border-color: #888; cursor: not-allowed; }
         .message-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: #999; }
+        .message .reply-quote { font-size: 12px; color: #888; border-left: 3px solid #ccc; padding-left: 8px; margin-bottom: 6px; }
+        .message .attachment { max-width: 100%; max-height: 280px; margin-top: 6px; border-radius: 6px; display: block; }
         /* 右欄：成員清單 */
         .members-panel { width: 200px; border-left: 1px solid #000; display: flex; flex-direction: column; background: #fafafa; }
         .members-header { padding: 16px; border-bottom: 1px solid #000; font-weight: bold; font-size: 16px; text-align: center; }
@@ -97,6 +99,30 @@
             setTimeout(function () { toast.classList.remove("visible"); }, 3000);
         }
 
+        const errorCodeMap = {
+            "owner_cannot_leave": "群主不能退出自己的群組",
+            "not_group_owner": "只有群主才能刪除群組",
+            "not_group_member": "你不是此群組的成員",
+            "group_not_found": "找不到該群組",
+            "group_limit_reached": "已達建立群組上限",
+            "email_already_registered": "此 Email 已註冊",
+            "invalid_credentials": "帳號或密碼錯誤",
+            "too_many_attachments": "最多只能附加 4 個檔案",
+            "attachment_too_large": "附件檔案過大（每個需 ≤5MB，總計 ≤25MB）",
+            "invalid_attachment": "附件的圖片格式不支援",
+            "reply_message_not_found": "回覆的訊息不存在",
+            "not_message_author": "只有訊息作者才能刪除",
+            "redis_unavailable": "伺服器暫時無法使用，請稍後再試",
+            "invalid_request": "要求內容不正確",
+            "not_allowed": "沒有權限執行此操作"
+        };
+
+        function friendlyError(data, fallback) {
+            if (data && data.code && errorCodeMap[data.code]) return errorCodeMap[data.code];
+            if (data && data.error) return data.error;
+            return fallback || "操作失敗";
+        }
+
         function formatTime(ts) {
             if (!ts) return "";
             const d = new Date(Number(ts));
@@ -127,12 +153,12 @@
                 actions.className = "group-actions";
                 const isOwner = group.owner_id === currentUser.id;
                 const isMember = (group.members || []).some(function (m) { return m.id === currentUser.id; });
-                if (isMember) {
+                if (isMember && !isOwner) {
                     const leaveBtn = document.createElement("button");
                     leaveBtn.textContent = "退出";
                     leaveBtn.addEventListener("click", function (e) { e.stopPropagation(); leaveGroup(group.id); });
                     actions.appendChild(leaveBtn);
-                } else {
+                } else if (!isMember) {
                     const joinBtn = document.createElement("button");
                     joinBtn.textContent = "加入";
                     joinBtn.addEventListener("click", function (e) { e.stopPropagation(); joinGroup(group.id); });
@@ -185,10 +211,24 @@
                 const meta = document.createElement("div");
                 meta.className = "meta";
                 meta.textContent = (own ? currentUser.name : author) + " · " + formatTime(msg.timestamp);
+                if (msg.reply_to && msg.reply_to.content) {
+                    const quote = document.createElement("div");
+                    quote.className = "reply-quote";
+                    quote.textContent = (msg.reply_to.authorid === currentUser.id ? "回覆：" : "回覆 ") + msg.reply_to.content;
+                    div.appendChild(quote);
+                }
                 const content = document.createElement("div");
                 content.textContent = msg.content;
                 div.appendChild(meta);
                 div.appendChild(content);
+                const atts = msg.attachments || [];
+                atts.forEach(function (att) {
+                    if (!att.data) return;
+                    const img = document.createElement("img");
+                    img.className = "attachment";
+                    img.src = "data:" + ((att.mime_type) || "image/jpeg") + ";base64," + att.data;
+                    div.appendChild(img);
+                });
                 messagesEl.appendChild(div);
             });
             messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -365,7 +405,7 @@
                         messagesByGroup[gid] = data.messages || [];
                     } else if (gid) {
                         messagesByGroup[gid] = [];
-                        if (data && data.error) showToast(data.error);
+                        if (data && data.error) showToast(friendlyError(data, "載入訊息失敗"));
                     }
                     if (activeGroupId === gid) renderMessages();
                     return;
@@ -373,20 +413,20 @@
                 if (evt.type === "message_sent") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast((data && data.error) || "傳送失敗");
+                    if (!(data && data.ok)) showToast(friendlyError(data, "傳送失敗"));
                     return;
                 }
                 if (evt.type === "group_created") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast((data && data.error) || "建立群組失敗");
+                    if (!(data && data.ok)) showToast(friendlyError(data, "建立群組失敗"));
                     else applyState();
                     return;
                 }
                 if (evt.type === "group_deleted") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast((data && data.error) || "刪除群組失敗");
+                    if (!(data && data.ok)) showToast(friendlyError(data, "刪除群組失敗"));
                     else {
                         const gid = evt.group_id;
                         groups = groups.filter(function (g) { return g.id !== gid; });
@@ -408,14 +448,14 @@
                 if (evt.type === "group_joined") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast((data && data.error) || "加入群組失敗");
+                    if (!(data && data.ok)) showToast(friendlyError(data, "加入群組失敗"));
                     else applyState();
                     return;
                 }
                 if (evt.type === "group_left") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast((data && data.error) || "退出群組失敗");
+                    if (!(data && data.ok)) showToast(friendlyError(data, "退出群組失敗"));
                     else {
                         const gid = evt.group_id;
                         groups = groups.filter(function (g) { return g.id !== gid; });

@@ -215,7 +215,7 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
-	if group.OwnerID == memberID {
+	if s.snowflake.ToSnowflake(group.OwnerID) == memberID {
 		writeError(c, http.StatusConflict, "owner_cannot_leave", "group owner cannot leave the group")
 		return
 	}
@@ -317,12 +317,6 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 	}
 
 	if _, err := s.redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
-		s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
-			Event: core.WSEventEnum.DeleteGroup,
-			Payload: gin.H{
-				"group": groupResponse,
-			},
-		})
 		for _, groupMemberID := range members {
 			normalizedMemberID := s.snowflake.ToSnowflake(groupMemberID)
 

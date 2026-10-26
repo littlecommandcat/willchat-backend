@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WillChat | 註冊</title>
+
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background: #fff;
+            color: #000;
+        }
+
+        form {
+            width: 300px;
+            padding: 30px;
+            border: 1px solid #000;
+            border-radius: 8px;
+        }
+
+        h2 {
+            text-align: center;
+            margin-top: 0;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            border: 1px solid #aaa;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 20px;
+            background: #000;
+            color: #fff;
+            border: 1px solid #000;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        button:disabled {
+            background: #777;
+            cursor: not-allowed;
+        }
+
+        p {
+            text-align: center;
+            font-size: 14px;
+            margin-bottom: 0;
+        }
+
+        a {
+            color: #000;
+        }
+
+        #message {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <form id="registerForm">
+        <h2>建立帳號</h2>
+
+        <label for="username">帳號</label>
+        <input
+            type="text"
+            id="username"
+            name="username"
+            autocomplete="username"
+            required
+        >
+
+        <label for="email">電子郵件</label>
+        <input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="email"
+            required
+        >
+
+        <label for="password">密碼</label>
+        <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="new-password"
+            required
+        >
+
+        <label for="confirm_password">確認密碼</label>
+        <input
+            type="password"
+            id="confirm_password"
+            name="confirm_password"
+            autocomplete="new-password"
+            required
+        >
+
+        <button type="submit" id="registerButton">註冊</button>
+
+        <p>已有帳號？<a href="index.html">返回登入</a></p>
+
+        <p id="message" role="status"></p>
+    </form>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+    <script>
+        const form = document.getElementById("registerForm");
+        const message = document.getElementById("message");
+        const button = document.getElementById("registerButton");
+
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            const bridge = channel.objects.bridge;
+
+            form.addEventListener("submit", function(event) {
+                event.preventDefault();
+
+                const username = document.getElementById("username").value.trim();
+                const email = document.getElementById("email").value.trim();
+                const password = document.getElementById("password").value;
+                const confirmPassword = document.getElementById("confirm_password").value;
+
+                if (password !== confirmPassword) {
+                    message.textContent = "驗證密碼不一致";
+                    return;
+                }
+
+                button.disabled = true;
+                message.textContent = "正在註冊...";
+
+                bridge.register(username, email, password);
+            });
+
+            bridge.server_event.connect(function (payload) {
+                let evt = null;
+                try { evt = JSON.parse(payload); } catch (e) { evt = null; }
+                if (!evt || evt.type !== "register") return;
+                let data = null;
+                try { data = JSON.parse(evt.result); } catch (e) { data = { ok: false, error: "伺服器回應無法解析" }; }
+                button.disabled = false;
+                if (data.ok) {
+                    message.textContent = "註冊成功";
+                    window.location.href = "index.html?registered=1";
+                } else {
+                    message.textContent = data.error || "註冊失敗";
+                }
+            });
+        });
+    </script>
+</body>
+</html>

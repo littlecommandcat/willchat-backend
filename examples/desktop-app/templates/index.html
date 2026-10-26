@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WillChat | 登入</title>
+
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background: #fff;
+            color: #000;
+        }
+
+        form {
+            width: 300px;
+            padding: 30px;
+            border: 1px solid #000;
+            border-radius: 8px;
+        }
+
+        h2 {
+            text-align: center;
+            margin-top: 0;
+        }
+
+        label {
+            display: block;
+            margin-top: 15px;
+        }
+
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            border: 1px solid #aaa;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 20px;
+            background: #000;
+            color: #fff;
+            border: 1px solid #000;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        p {
+            text-align: center;
+            font-size: 14px;
+            margin-bottom: 0;
+        }
+
+        a {
+            color: #000;
+        }
+
+        #message {
+            text-align: center;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+
+        #toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #000;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 14px;
+            opacity: 0;
+            transform: translateY(-10px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        #toast.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="toast"></div>
+
+    <form id="loginForm">
+        <h2>WillChat</h2>
+
+        <label for="email">電子郵件</label>
+        <input
+            type="email"
+            id="email"
+            name="email"
+            autocomplete="email"
+            required
+        >
+
+        <label for="password">密碼</label>
+        <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="current-password"
+            required
+        >
+
+        <button type="submit" id="loginButton">登入</button>
+
+        <p>還沒有帳號？<a href="register.html">立即註冊</a></p>
+        <p>免費帳號？<a href="#" id="rickroll">立即取得</a></p>
+
+        <p id="message" role="status"></p>
+    </form>
+
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+    <script>
+        const form = document.getElementById("loginForm");
+        const message = document.getElementById("message");
+        const button = document.getElementById("loginButton");
+        const toast = document.getElementById("toast");
+
+        function showToast(text) {
+            toast.textContent = text;
+            toast.classList.add("visible");
+            setTimeout(function () {
+                toast.classList.remove("visible");
+            }, 3000);
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("registered") === "1") {
+            showToast("註冊成功");
+        }
+
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            const bridge = channel.objects.bridge;
+
+            document.getElementById("rickroll").addEventListener("click", function(event) {
+                event.preventDefault();
+                bridge.navigate("/rick");
+            });
+
+            form.addEventListener("submit", function(event) {
+                event.preventDefault();
+
+                const email = document.getElementById("email").value.trim();
+                const password = document.getElementById("password").value;
+
+                if (!email || !password) {
+                    message.textContent = "請輸入帳號與密碼";
+                    return;
+                }
+
+                button.disabled = true;
+                message.textContent = "正在登入...";
+
+                bridge.login(email, password);
+            });
+
+            bridge.server_event.connect(function (payload) {
+                let evt = null;
+                try { evt = JSON.parse(payload); } catch (e) { evt = null; }
+                if (!evt || evt.type !== "login") return;
+                let data = null;
+                try { data = JSON.parse(evt.result); } catch (e) { data = { ok: false, error: "伺服器回應無法解析" }; }
+                button.disabled = false;
+                if (data.ok) {
+                    message.textContent = "登入成功";
+                    window.location.href = "chat.html";
+                } else {
+                    message.textContent = data.error || "登入失敗";
+                }
+            });
+        });
+    </script>
+</body>
+</html>

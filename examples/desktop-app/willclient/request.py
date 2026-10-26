@@ -9,6 +9,7 @@ from config import BASE_URL
 from .cache import _cache_base
 
 logger = logging.getLogger(__name__)
+REQUEST_TIMEOUT_SECONDS = 60
 
 class _Requester:
     def __init__(self):
@@ -29,7 +30,7 @@ class _Requester:
         self._closed = True
 
     async def _request(self, method: str, path: str, session: aiohttp.ClientSession, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
-        response = await session.request(method, f"{BASE_URL}{path}", timeout=20, **kwargs)
+        response = await session.request(method, f"{BASE_URL}{path}", timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
         text = await response.text()
         body = None
         try:

@@ -94,6 +94,7 @@ class Client:
                     async with websockets.connect(
                         self.websocket_url(token),
                         origin=BASE_URL,
+                        open_timeout=30,
                         ping_interval=None
                     ) as socket:
                         self._socket = socket

@@ -300,6 +300,25 @@
                 }
                 return;
             }
+            if (evt.type === "member_update") {
+                const member = evt.member;
+                if (!member) return;
+                if (member.id === currentUser.id) currentUser.name = member.name;
+                groups.forEach(function (group) {
+                    (group.members || []).forEach(function (groupMember) {
+                        if (groupMember.id === member.id) groupMember.name = member.name;
+                    });
+                });
+                renderGroups();
+                renderMembers();
+                if (activeGroupId && messagesByGroup[activeGroupId]) {
+                    messagesByGroup[activeGroupId].forEach(function (message) {
+                        if (message.author_id === member.id) message.author_name = member.name;
+                    });
+                    renderMessages();
+                }
+                return;
+            }
             if (evt.type === "error") { showToast(evt.message || "連線發生錯誤"); }
         }
         function promptCreateGroup() {
@@ -334,6 +353,10 @@
                 let evt = null;
                 try { evt = JSON.parse(payload); } catch (e) { evt = null; }
                 if (!evt) return;
+                if (evt.type === "server_event") {
+                    window.dispatchEvent(new CustomEvent("willchat:event", { detail: evt }));
+                    return;
+                }
                 if (evt.type === "messages") {
                     const gid = evt.group_id;
                     let data = null;

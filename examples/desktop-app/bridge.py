@@ -7,7 +7,7 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QUrl
 
 from config import BASE_URL
-from willclient.request import RequestManager
+from willclient.request import RequestManager, REQUEST_TIMEOUT_SECONDS
 from willclient.models import Group, Member, Message
 from willclient.events import EventType
 from willclient.cache import _cache_base
@@ -111,11 +111,25 @@ class Bridge(QObject):
     def _register_listeners(self) -> None:
         @self.client.listen(EventType.EVENT)
         async def on_event(event_type, payload, payload_data):
+            event_name = event_type.value if hasattr(event_type, "value") else str(event_type)
+            self._emit("server_event", {"event": event_name, "payload": payload})
             try:
                 self._handle_event(event_type, payload_data)
             except Exception as exc:
                 logger.exception("[bridge] event handler error for %s", event_type)
                 print("[bridge] event handler error:", exc)
+
+        for lifecycle_event in (EventType.ERROR, EventType.DISCONNECT, EventType.CLOSE):
+            @self.client.listen(lifecycle_event)
+            async def on_lifecycle_event(*args, event_type=lifecycle_event):
+                event_name = event_type.value
+                message = str(args[0]) if args else ""
+                self._emit("server_event", {
+                    "event": event_name,
+                    "payload": {"message": message},
+                })
+                if event_type in (EventType.ERROR, EventType.DISCONNECT):
+                    self._emit("error", {"type": event_name, "message": message})
 
     def _handle_event(self, event_type, payload_data: dict) -> None:
         group = payload_data.get("group")
@@ -174,6 +188,17 @@ class Bridge(QObject):
                     "member": {"id": member.id if member else "", "name": member.name if member else ""},
                 }
             )
+            return
+
+        if event_type == EventType.MEMBER_UPDATE and member is not None:
+            if member.id == self._current_user.get("id"):
+                self._current_user["name"] = member.name
+            for entry in self._groups.values():
+                if member.id in entry["members"]:
+                    entry["members"][member.id] = member.name
+            self._emit("member_update", {
+                "member": {"id": member.id, "name": member.name},
+            })
             return
 
         if event_type in (EventType.ERROR, EventType.DISCONNECT):
@@ -256,7 +281,7 @@ class Bridge(QObject):
                 async with session.post(
                     f"{BASE_URL}/auth/register",
                     json={"name": username, "email": email, "password": password},
-                    timeout=15,
+                    timeout=REQUEST_TIMEOUT_SECONDS,
                 ) as resp:
                     text = await resp.text()
                     body = None
@@ -362,6 +387,7 @@ class Bridge(QObject):
             logger.exception("[bridge] create group failed")
             return json.dumps({"ok": False, "error": f"建立群組失敗：{exc}"}, ensure_ascii=False)
         self._upsert_group(group)
+        self._emit("group_create", {"group": self._ser_group(group)})
         return json.dumps({"ok": True, "group": self._ser_group(group)}, ensure_ascii=False)
 
     @pyqtSlot(str, result=str)
@@ -376,6 +402,7 @@ class Bridge(QObject):
             return json.dumps({"ok": False, "error": f"刪除群組失敗：{exc}"}, ensure_ascii=False)
         self._groups.pop(group_id, None)
         self._messages.pop(group_id, None)
+        self._emit("group_delete", {"group_id": group_id})
         return json.dumps({"ok": True}, ensure_ascii=False)
 
     @pyqtSlot(str, result=str)
@@ -389,6 +416,10 @@ class Bridge(QObject):
             logger.exception("[bridge] join group failed for group %s", group_id)
             return json.dumps({"ok": False, "error": f"加入群組失敗：{exc}"}, ensure_ascii=False)
         self._upsert_group(group)
+        self._emit("group_join", {
+            "group_id": group.id,
+            "member": {"id": self._current_user.get("id", ""), "name": self._current_user.get("name", "")},
+        })
         return json.dumps({"ok": True, "group": self._ser_group(group)}, ensure_ascii=False)
 
     @pyqtSlot(str, result=str)
@@ -403,5 +434,9 @@ class Bridge(QObject):
             return json.dumps({"ok": False, "error": f"退出群組失敗：{exc}"}, ensure_ascii=False)
         self._groups.pop(group_id, None)
         self._messages.pop(group_id, None)
+        self._emit("group_leave", {
+            "group_id": group_id,
+            "member": {"id": self._current_user.get("id", ""), "name": self._current_user.get("name", "")},
+        })
         return json.dumps({"ok": True}, ensure_ascii=False)
 

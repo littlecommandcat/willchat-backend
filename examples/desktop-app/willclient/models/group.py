@@ -1,5 +1,4 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
 import aiohttp
@@ -8,8 +7,7 @@ from ..exceptions import UnknownLogin, UnknownSession
 from ..cache import _cache_base
 from config import BASE_URL
 from ..utils import raise_code_error, is_not_allowed_code
-if TYPE_CHECKING:
-    from .enums import ErrorType
+from .enums import ErrorType
 
 @dataclass
 class Group:

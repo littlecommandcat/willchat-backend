@@ -349,22 +349,37 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 }
 
 func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberResponse, error) {
-	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(s.snowflake.ToSnowflake(member.Id))).Result()
+	memberID := s.snowflake.ToSnowflake(member.Id)
+	ownedIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(memberID)).Result()
 	if err != nil {
 		log.Printf("getMember: %s", err)
 		return memberResponse{}, err
 	}
-	groupData := make([]groupResponse, 0, len(groupIDs))
-	for i := 0; i < len(groupIDs); i += 1 {
-		if groupIDs[i] == "" {
+	joinedIDs, err := s.redis.SMembers(context.Background(), memberGroupsKey(memberID)).Result()
+	if err != nil {
+		log.Printf("getMember joined groups: %s", err)
+		return memberResponse{}, err
+	}
+	groupIDs := make([]string, 0, len(ownedIDs)+len(joinedIDs))
+	seen := make(map[string]struct{}, len(ownedIDs)+len(joinedIDs))
+	for _, id := range append(ownedIDs, joinedIDs...) {
+		id = s.snowflake.ToSnowflake(id)
+		if id == "" {
 			continue
 		}
-		group, err := s.getGroup(s.snowflake.ToSnowflake(groupIDs[i]))
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		groupIDs = append(groupIDs, id)
+	}
+	groupData := make([]groupResponse, 0, len(groupIDs))
+	for i := 0; i < len(groupIDs); i += 1 {
+		group, err := s.getGroup(groupIDs[i])
 		if err != nil {
 			log.Printf("getGroup %s failed: %v", groupIDs[i], err)
 			continue
 		}
-		log.Printf("ID: %s", groupIDs[i])
 		groupData = append(groupData, toGroupResponse(s.snowflake, group))
 	}
 	blockData := make([]string, 0, len(member.Block))

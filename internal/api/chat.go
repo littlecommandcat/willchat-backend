@@ -324,7 +324,6 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 				memberGroupsKey(normalizedMemberID),
 				groupID,
 			)
-			s.hub.RemoveGroup(normalizedMemberID, groupID)
 		}
 
 		// Remove owned-groups
@@ -376,6 +375,14 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 			"member": memberResponse,
 		},
 	})
+
+	for _, groupMemberID := range members {
+		s.hub.RemoveGroup(
+			s.snowflake.ToSnowflake(groupMemberID),
+			groupID,
+		)
+	}
+	s.hub.RemoveGroup(memberID, groupID)
 
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",

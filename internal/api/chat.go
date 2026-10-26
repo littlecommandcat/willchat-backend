@@ -102,6 +102,8 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 
+	log.Printf("[group] create succeeded group_id=%s member_id=%s name=%q", group.GroupID, memberID, group.Name)
+
 	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
 		Event:   core.WSEventEnum.CreateGroup,
 		Payload: gin.H{"group": toGroupResponse(s.snowflake, group)},
@@ -183,6 +185,7 @@ func (s *ChatService) JoinGroup(c *gin.Context) {
 
 	groupResponse := toGroupResponse(s.snowflake, groupRecord)
 	memberResponse, _ := s.auth.toMemberResponse(memberData, true)
+	log.Printf("[group] join succeeded group_id=%s member_id=%s", groupID, memberID)
 	s.hub.AddGroup(memberID, groupID)
 	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.JoinGroup,
@@ -255,6 +258,7 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 
 	groupResponse := toGroupResponse(s.snowflake, groupRecord)
 	memberResponse, _ := s.auth.toMemberResponse(memberData, true)
+	log.Printf("[group] leave succeeded group_id=%s member_id=%s", groupID, memberID)
 	s.hub.RemoveGroup(memberID, groupID)
 	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.LeaveGroup,
@@ -262,11 +266,6 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 			"group":  groupResponse,
 			"member": memberResponse,
 		},
-	})
-
-	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
-		Event:   core.WSEventEnum.CreateGroup,
-		Payload: gin.H{"group": toGroupResponse(s.snowflake, group)},
 	})
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
@@ -367,6 +366,8 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+
+	log.Printf("[group] delete succeeded group_id=%s member_id=%s", groupID, memberID)
 
 	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
 		Event: core.WSEventEnum.DeleteGroup,

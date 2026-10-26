@@ -351,6 +351,7 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberResponse, error) {
 	groupIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(s.snowflake.ToSnowflake(member.Id))).Result()
 	if err != nil {
+		log.Printf("getMember: %s", err)
 		return memberResponse{}, err
 	}
 	groupData := make([]groupResponse, 0, len(groupIDs))

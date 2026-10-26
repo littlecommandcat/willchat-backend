@@ -105,7 +105,7 @@ func (h *Hub) CloseMember(memberID string) {
 func (h *Hub) BroadcastOnlyMember(memberID string, event WSEvent) {
 	payload, err := json.Marshal(event)
 	if err != nil {
-		log.Fatalf("Error: %s", err)
+		log.Printf("marshal websocket event failed: %v", err)
 		return
 	}
 
@@ -133,7 +133,6 @@ func (h *Hub) BroadcastOnlyGroup(groupID string, event WSEvent) {
 
 	for client := range h.clients {
 		if !containsGroup(client.GroupID, groupID) {
-			log.Printf("Not equal %s and %s", client.GroupID, groupID)
 			continue
 		}
 

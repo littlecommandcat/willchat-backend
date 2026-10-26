@@ -264,6 +264,11 @@ func (s *ChatService) LeaveGroup(c *gin.Context) {
 		},
 	})
 
+	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
+		Event:   core.WSEventEnum.CreateGroup,
+		Payload: gin.H{"group": toGroupResponse(s.snowflake, group)},
+	})
+
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"group":  groupResponse,
 		"member": memberResponse,
@@ -312,6 +317,12 @@ func (s *ChatService) DeleteGroup(c *gin.Context) {
 	}
 
 	if _, err := s.redis.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{
+			Event: core.WSEventEnum.DeleteGroup,
+			Payload: gin.H{
+				"group": groupResponse,
+			},
+		})
 		for _, groupMemberID := range members {
 			normalizedMemberID := s.snowflake.ToSnowflake(groupMemberID)
 

@@ -856,18 +856,32 @@ func (s *ChatService) groupAttachmentKeys(groupID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	const batchSize = 256
+	messageKeys := make([]string, len(messageIDs))
+	for i, messageID := range messageIDs {
+		messageKeys[i] = messagesKey(messageID)
+	}
+
 	keys := make([]string, 0)
-	for _, messageID := range messageIDs {
-		value, err := s.redis.Get(context.Background(), messagesKey(messageID)).Result()
+	for start := 0; start < len(messageKeys); start += batchSize {
+		end := min(start+batchSize, len(messageKeys))
+		values, err := s.redis.MGet(context.Background(), messageKeys[start:end]...).Result()
 		if err != nil {
-			continue
+			return nil, err
 		}
-		var message core.Message
-		if err := json.Unmarshal([]byte(value), &message); err != nil {
-			continue
-		}
-		for _, attachment := range message.Attachments {
-			keys = append(keys, attachmentKey(attachment.Id))
+		for _, value := range values {
+			encoded, ok := value.(string)
+			if !ok {
+				continue
+			}
+			var message core.Message
+			if err := json.Unmarshal([]byte(encoded), &message); err != nil {
+				continue
+			}
+			for _, attachment := range message.Attachments {
+				keys = append(keys, attachmentKey(attachment.Id))
+			}
 		}
 	}
 	return keys, nil

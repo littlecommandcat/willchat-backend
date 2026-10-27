@@ -1,10 +1,11 @@
 *.exe
 .env
-__pycache__
+__pycache__/
 *.log
 .VSCodeCounter
 test.md
 test.json
+target/
 
 app_linux_amd64
 app_windows_amd64

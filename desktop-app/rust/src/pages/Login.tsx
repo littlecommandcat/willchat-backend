@@ -44,10 +44,10 @@ export default function Login({ onLogin, onNavigateRegister }: Props) {
     }
   };
 
-  const handleRickroll = (e: React.MouseEvent) => {
-    e.preventDefault();
-    api.navigate("/rick");
-  };
+  // const handleRickroll = (e: React.MouseEvent) => {
+  //   e.preventDefault();
+  //   api.navigate("/rick");
+  // };
 
   return (
     <div className="auth-body">
@@ -83,12 +83,12 @@ export default function Login({ onLogin, onNavigateRegister }: Props) {
             立即註冊
           </a>
         </p>
-        <p>
+        {/* <p>
           免費帳號？
           <a href="#" onClick={handleRickroll}>
             立即取得
           </a>
-        </p>
+        </p> */}
         <p className="auth-message" role="status">{message}</p>
       </form>
     </div>

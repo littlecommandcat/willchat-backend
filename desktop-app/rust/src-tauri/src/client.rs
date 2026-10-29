@@ -2,16 +2,19 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use crate::models::{GroupEntry, MemberInfo, SharedState};
+use crate::config;
 
-pub const BASE_URL: &str = "http://26.174.248.219:8080";
-pub const REQUEST_TIMEOUT: u64 = 5;
 
 pub fn is_ok_status(status: u16) -> bool {
     matches!(status, 200 | 201 | 202 | 204)
 }
 
 pub fn server_url() -> reqwest::Client {
-    reqwest::Client::builder().timeout(Duration::from_secs(REQUEST_TIMEOUT)).build().expect("build client")
+    let cfg = config::get();
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(cfg.timeout))
+        .build()
+        .expect("build client")
 }
 
 pub fn parse_body(text: &str) -> Value {
@@ -91,7 +94,7 @@ pub async fn request_json(
     token: Option<&str>,
     body: Option<Value>,
 ) -> Result<(u16, Value), String> {
-    let url = format!("{BASE_URL}{path}");
+    let url = format!("{}{path}", config::get().url);
     let mut req = match method {
         "POST" => client.post(&url),
         "PUT" => client.put(&url),
@@ -111,7 +114,7 @@ pub async fn request_json(
 }
 
 pub async fn health_check() -> Result<(bool, String), String> {
-    let resp = server_url().get(format!("{BASE_URL}/health")).send().await.map_err(|_| "無法連線後端".to_string())?;
+    let resp = server_url().get(format!("{}/health", config::get().url)).send().await.map_err(|_| "無法連線後端".to_string())?;
     let status = resp.status().as_u16();
     if status == 200 {
         Ok((true, "ok".to_string()))

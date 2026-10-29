@@ -4,9 +4,9 @@ use std::time::Duration;
 use tauri::AppHandle;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::client::BASE_URL;
 use crate::events::handle_ws_event;
 use crate::models::SharedState;
+use crate::config;
 
 pub async fn start_ws(state: &SharedState, app: &AppHandle) {
     let mut busy = state.ws_busy.lock().await;
@@ -22,9 +22,7 @@ pub async fn start_ws(state: &SharedState, app: &AppHandle) {
     let state = state.clone();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let ws_base = BASE_URL
-            .replacen("http://", "ws://", 1)
-            .replacen("https://", "wss://", 1);
+        let ws_base = config::get().ws_url.clone();
         loop {
             let full_url = format!("{ws_base}/ws?token={token}");
             let stream = match tokio_tungstenite::connect_async(&full_url).await {

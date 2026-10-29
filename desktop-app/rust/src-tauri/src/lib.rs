@@ -6,6 +6,7 @@ mod client;
 mod events;
 mod models;
 mod ws;
+mod config;
 
 use models::SharedState;
 

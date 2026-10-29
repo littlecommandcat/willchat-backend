@@ -4,17 +4,14 @@ use std::time::Duration;
 use crate::models::{GroupEntry, MemberInfo, SharedState};
 
 pub const BASE_URL: &str = "http://26.174.248.219:8080";
-pub const REQUEST_TIMEOUT: u64 = 60;
+pub const REQUEST_TIMEOUT: u64 = 5;
 
 pub fn is_ok_status(status: u16) -> bool {
     matches!(status, 200 | 201 | 202 | 204)
 }
 
 pub fn server_url() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT))
-        .build()
-        .expect("build client")
+    reqwest::Client::builder().timeout(Duration::from_secs(REQUEST_TIMEOUT)).build().expect("build client")
 }
 
 pub fn parse_body(text: &str) -> Value {
@@ -38,11 +35,7 @@ pub fn parse_group(group: &Value) -> GroupEntry {
 }
 
 pub fn parse_groups(member: &Value) -> Vec<GroupEntry> {
-    member
-        .get("groups")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().map(parse_group).collect())
-        .unwrap_or_default()
+    member.get("groups").and_then(|v| v.as_array()).map(|arr| arr.iter().map(parse_group).collect()).unwrap_or_default()
 }
 
 pub async fn upsert_group(state: &SharedState, group: GroupEntry) {
@@ -144,11 +137,7 @@ pub async fn login_request(
         return Ok((json!({}), String::new()));
     }
     let data = body.get("data").cloned().unwrap_or_else(|| json!({}));
-    let token = data
-        .get("token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let token = data.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
     Ok((data, token))
 }
 
@@ -167,10 +156,6 @@ pub async fn register_request(
     )
     .await?;
     let data = body.get("data").cloned().unwrap_or_else(|| json!({}));
-    let token = data
-        .get("token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let token = data.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
     Ok((status, data, token))
 }

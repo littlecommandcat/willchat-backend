@@ -1,51 +1,50 @@
 import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import "./App.css";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Chat from "./pages/Chat";
+
+type Page = "login" | "register" | "chat";
 
 function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+  const [page, setPage] = useState<Page>("login");
+  const [registered, setRegistered] = useState(false);
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+  const handleLogin = () => {
+    setPage("chat");
+  };
+
+  const handleNavigateRegister = () => {
+    setPage("register");
+  };
+
+  const handleRegisterDone = (ok: boolean) => {
+    if (ok) {
+      setRegistered(true);
+      setPage("login");
+    } else {
+      setPage("login");
+    }
+  };
+
+  if (page === "register") {
+    return <Register onDone={handleRegisterDone} />;
+  }
+
+  if (page === "chat") {
+    return <Chat />;
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+    <>
+      {registered && (
+        <div id="toast" className="toast visible" style={{ zIndex: 2000 }}>
+          註冊成功
+        </div>
+      )}
+      <Login onLogin={handleLogin} onNavigateRegister={handleNavigateRegister} />
+    </>
   );
 }
 
 export default App;
+

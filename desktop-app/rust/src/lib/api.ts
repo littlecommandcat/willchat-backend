@@ -1,0 +1,65 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+export interface Member {
+  id: string;
+  name: string;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  owner_id: string;
+  members: Member[];
+}
+
+export interface Message {
+  id: string;
+  author_id: string;
+  author_name?: string;
+  content: string;
+  timestamp: number;
+  type: number;
+  attachments?: { data?: string; mime_type?: string }[];
+  reply_to?: { authorid?: string; content?: string } | null;
+  status?: string;
+  group?: { id: string; name: string } | null;
+}
+
+export interface ApiResult {
+  ok: boolean;
+  error?: string;
+  code?: string;
+  [key: string]: unknown;
+}
+
+export const api = {
+  health: () => invoke<ApiResult>("health"),
+  login: (email: string, password: string) =>
+    invoke<ApiResult>("login", { email, password }),
+  register: (username: string, email: string, password: string) =>
+    invoke<ApiResult>("register", { username, email, password }),
+  getState: () =>
+    invoke<{ member: Member; groups: Group[] }>("get_state"),
+  getMessages: (groupId: string) =>
+    invoke<ApiResult & { messages?: Message[] }>("get_messages", { groupId }),
+  getMembers: (groupId: string) =>
+    invoke<{ members: Member[] }>("get_members", { groupId }),
+  sendMessage: (groupId: string, content: string) =>
+    invoke<ApiResult>("send_message", { groupId, content }),
+  createGroup: (name: string) => invoke<ApiResult>("create_group", { name }),
+  deleteGroup: (groupId: string) =>
+    invoke<ApiResult>("delete_group", { groupId }),
+  joinGroup: (groupId: string) => invoke<ApiResult>("join_group", { groupId }),
+  leaveGroup: (groupId: string) =>
+    invoke<ApiResult>("leave_group", { groupId }),
+  navigate: (page: string) => invoke<void>("navigate", { page }),
+};
+
+export interface ServerEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export const onServerEvent = (handler: (event: ServerEvent) => void) =>
+  listen<ServerEvent>("willchat:event", (event) => handler(event.payload));

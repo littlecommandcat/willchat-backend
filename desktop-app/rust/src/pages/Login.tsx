@@ -28,6 +28,11 @@ export default function Login({ onLogin, onNavigateRegister }: Props) {
       setMessage("請輸入帳號與密碼");
       return;
     }
+    const isGmail = /^[a-zA-Z0-9._%+-]+@gmail.com$/.test(email.trim());
+    if (!isGmail || password.length < 8) {
+      setMessage("帳號或密碼錯誤");
+      return;
+    }
     setBusy(true);
     setMessage("正在登入...");
     const result = await api.login(email.trim(), password);

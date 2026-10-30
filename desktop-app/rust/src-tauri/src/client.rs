@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 use std::time::Duration;
+use tokio::time::Instant;
 
 use crate::models::{GroupEntry, MemberInfo, SharedState};
 use crate::config;
@@ -113,13 +114,15 @@ pub async fn request_json(
     Ok((status, parse_body(&text)))
 }
 
-pub async fn health_check() -> Result<(bool, String), String> {
+pub async fn health_check() -> Result<(bool, String, i64), String> {
+    let start = Instant::now();
     let resp = server_url().get(format!("{}/health", config::get().url)).send().await.map_err(|_| "無法連線後端".to_string())?;
+    let duration = start.elapsed();
     let status = resp.status().as_u16();
     if status == 200 {
-        Ok((true, "ok".to_string()))
+        Ok((true, "ok".to_string(), duration.as_millis() as i64))
     } else {
-        Ok((false, format!("後端異常（HTTP {status}）")))
+        Ok((false, format!("後端異常（HTTP {status}）"), -1))
     }
 }
 

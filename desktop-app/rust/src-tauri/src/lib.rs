@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
+use regex::Regex;
 
 mod client;
 mod events;
@@ -10,10 +11,16 @@ mod config;
 
 use models::SharedState;
 
+fn is_gmail(email: &String) -> bool {
+    let gmail_regex = Regex::new(r"^[a-zA-Z0-9._%+-]+(\+[a-zA-Z0-9._%+-]+)?@gmail\.com$").unwrap();
+    let result = gmail_regex.is_match(email);
+    return result;
+}
+
 #[tauri::command]
 async fn health() -> Value {
-    let (ok, msg) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string()));
-    json!({"ok": ok, "error": msg})
+    let (ok, msg, latency) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string(), -1));
+    json!({"ok": ok, "error": msg, "latency": latency})
 }
 
 #[tauri::command]
@@ -24,9 +31,14 @@ async fn login(
     password: String,
 ) -> Result<Value, String> {
     let email = email.trim().to_string();
-    let (ok, msg) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string()));
+    let (ok, msg, latency) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string(), -1));
+    state.network.write().await.latency = latency;
     if !ok {
+        state.network.write().await.tries += 1;
         return Ok(json!({"ok": false, "error": msg}));
+    }
+    if !is_gmail(&email) || password.len() < 8 {
+        return Ok(json!({"ok": false, "error": "帳號或密碼錯誤"}));
     }
     let client = client::server_url();
     match client::login_request(&client, &email, &password).await {
@@ -56,8 +68,19 @@ async fn register(
 ) -> Result<Value, String> {
     let username = username.trim().to_string();
     let email = email.trim().to_string();
-    let (ok, msg) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string()));
+    if username.trim().len() < 3 {
+        return Ok(json!({"ok": false, "error": "帳號名稱過於簡短"}));
+    }
+    if !is_gmail(&email) {
+        return Ok(json!({"ok": false, "error": "限制Gmail進行註冊"}));
+    }
+    if password.len() < 8 {
+        return Ok(json!({"ok": false, "error": "密碼過於簡短"}));
+    }
+    let (ok, msg, latency) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string(), -1));
+    state.network.write().await.latency = latency;
     if !ok {
+        state.network.write().await.tries += 1;
         return Ok(json!({"ok": false, "error": msg}));
     }
     let client = client::server_url();

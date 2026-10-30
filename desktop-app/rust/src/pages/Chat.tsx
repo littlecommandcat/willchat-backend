@@ -355,6 +355,7 @@ export default function Chat() {
             placeholder="輸入訊息..."
             disabled={!activeGroup}
             value={draft}
+            maxLength={2000}
             onChange={(e) => setDraft(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") sendMessage();

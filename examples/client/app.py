@@ -45,6 +45,9 @@ async def on_group_join(group: Group, member: Member):
 async def on_group_leave(group: Group, member: Member):
     print("LEAVE GROUP:", group, member)
 
+@client.listen("member_update")
+async def on_member_update(member: Member):
+    print("MEMBER UPDATE:", member)
 
 @client.listen("error")
 async def on_error(error):

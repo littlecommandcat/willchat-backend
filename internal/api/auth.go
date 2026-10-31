@@ -253,6 +253,19 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
 		return
 	}
+	memberWSResponse, responseErr := s.toMemberResponse(member, true)
+	if responseErr != nil {
+		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		return
+	}
+	s.hub.BroadcastAll(
+		core.WSEvent{
+			Event: core.WSEventEnum.ProfileUpdate,
+			Payload: gin.H{
+				"member": memberWSResponse,
+			},
+		},
+	)
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 }
 
@@ -334,9 +347,8 @@ func (s *Service) ResetPassword(c *gin.Context) {
 	if s.hub != nil {
 		s.hub.CloseMember(member.Id)
 	}
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
-		"token": newToken,
-	}})
+	// Status 204
+	c.Status(http.StatusNoContent)
 }
 
 func (s *Service) tokenBelongsToMember(token, memberID string) bool {

@@ -24,9 +24,9 @@ class Client:
         self._closed = asyncio.Event()
         self._closed.set()
         self._start_task: asyncio.Task | None = None
+        self._member: Member | None = None
         self.command_handler = CommandHandler(command_prefix)
         self.event_handler = EventHandler()
-        self._member: Member | None = None
 
     def __enter__(self) -> None:
         raise TypeError("Use async with instead")

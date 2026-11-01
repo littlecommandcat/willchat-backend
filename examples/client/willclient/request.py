@@ -24,8 +24,11 @@ class _Requester:
         self._data.clear()
         self._closed = True
 
-    async def _request(self, method: str, path: str, session: aiohttp.ClientSession, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
-        response = await session.request(method, f"{BASE_URL}{path}", timeout=5, **kwargs)
+    async def _request(self, method: str, path: str, session: aiohttp.ClientSession, timeout: aiohttp.ClientTimeout | float | None = None, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+        if not isinstance(timeout, aiohttp.ClientTimeout):
+            timeout = aiohttp.ClientTimeout(total=timeout)
+
+        response = await session.request(method, f"{BASE_URL}{path}", timeout=timeout, **kwargs)
         try:
             body = await response.json()
         except ValueError:
@@ -33,35 +36,39 @@ class _Requester:
             
         return response, body
 
-    async def post(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+    async def post(self, path: str, timeout: aiohttp.ClientTimeout | float | None = None, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
         return await self._request(
             "POST",
             path=path,
             session=_cache_base.session,
+            timeout=timeout
             **kwargs
         )
 
-    async def get(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+    async def get(self, path: str, timeout: aiohttp.ClientTimeout | float | None = None, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
         return await self._request(
             "GET",
             path=path,
             session=_cache_base.session,
+            timeout=timeout,
             **kwargs
         )
 
-    async def put(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+    async def put(self, path: str, timeout: aiohttp.ClientTimeout | float | None = None, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
         return await self._request(
             "PUT",
             path=path,
             session=_cache_base.session,
+            timeout=timeout,
             **kwargs
         )
 
-    async def delete(self, path: str, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
+    async def delete(self, path: str, timeout: aiohttp.ClientTimeout | float | None = None, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
         return await self._request(
             "DELETE",
             path=path,
             session=_cache_base.session,
+            timeout=timeout,
             **kwargs
         )
 

@@ -1,10 +1,14 @@
-# Tauri + React + Typescript
+# WillChat Desktop Rust
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+將基礎的[willclient](../client/willclient/)轉換成Rust語言並使用Tauri + React + Typescript作為整體的開發架構。
 
-# Start
+~~好像沒有人會畫Icon的樣子~~
 
-Using npm.
+# Modules
+
+```ini
+npm install
+```
 
 ## Dev
 

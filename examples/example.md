@@ -12,6 +12,12 @@ python auth\login.py
 
 使用 `config.py`
 
+## 安裝需求
+
+```ini
+pip install -r requirements.txt
+```
+
 ## API 分類
 
 ### Health

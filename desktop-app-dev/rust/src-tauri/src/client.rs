@@ -111,6 +111,9 @@ pub async fn request_json(
     let resp = req.send().await.map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
     let text = resp.text().await.map_err(|e| e.to_string())?;
+    if status == 204 || text.is_empty() {
+        return Ok((status, Value::Null));
+    }
     Ok((status, parse_body(&text)))
 }
 
@@ -119,7 +122,7 @@ pub async fn health_check() -> Result<(bool, String, i64), String> {
     let resp = server_url().get(format!("{}/health", config::get().url)).send().await.map_err(|_| "無法連線後端".to_string())?;
     let duration = start.elapsed();
     let status = resp.status().as_u16();
-    if status == 200 {
+    if matches!(status, 200 | 204) {
         Ok((true, "ok".to_string(), duration.as_millis() as i64))
     } else {
         Ok((false, format!("後端異常（HTTP {status}）"), -1))

@@ -6,13 +6,13 @@ import time
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QUrl
 
-from apps.desktop.python.config import BASE_URL
-from apps.desktop.python.willclient.request import RequestManager, REQUEST_TIMEOUT_SECONDS
-from apps.desktop.python.willclient.models import Group, Member, Message
-from apps.desktop.python.willclient.events import EventType
-from apps.desktop.python.willclient.cache import _cache_base
+from config import BASE_URL
+from willclient.request import RequestManager, REQUEST_TIMEOUT_SECONDS
+from willclient.models import Group, Member, Message
+from willclient.events import EventType
+from willclient.cache import _cache_base
 
-import apps.desktop.python.willclient as willclient
+import willclient as willclient
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +279,7 @@ class Bridge(QObject):
         if not ok:
             return json.dumps({"ok": False, "error": msg}, ensure_ascii=False)
 
-        from apps.desktop.python.willclient.cache import _cache_base
+        from willclient.cache import _cache_base
         _cache_base.init_session()
         try:
             import aiohttp

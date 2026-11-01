@@ -67,7 +67,7 @@
                 <div class="message-empty" id="messageEmpty">選擇左側群組開始聊天</div>
             </div>
             <div class="chat-input">
-                <input type="text" id="messageInput" placeholder="輸入訊息..." disabled>
+                <input type="text" id="messageInput" placeholder="輸入訊息..." maxlength="2000" disabled>
                 <button id="sendButton" disabled>傳送</button>
             </div>
         </main>
@@ -394,7 +394,6 @@
                 try { evt = JSON.parse(payload); } catch (e) { evt = null; }
                 if (!evt) return;
                 if (evt.type === "server_event") {
-                    window.dispatchEvent(new CustomEvent("willchat:event", { detail: evt }));
                     return;
                 }
                 if (evt.type === "messages") {

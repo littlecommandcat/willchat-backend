@@ -101,7 +101,7 @@ class Client:
             _cache_base.init_session()
             if email and password:
                 data, token = await RequestManager.login(email, password)
-                self._member = Member.from_payload(data)
+                self._member = Member.from_payload(data.get("member") or {})
 
             if not token:
                 raise WillClientUnauthorized("Login failed")
@@ -274,7 +274,7 @@ class Client:
             raise UnexpectedBody(f"Return unexcepted response body")
 
         try:
-            group = Group.from_payload(body)
+            group = Group.from_payload(body.get("data", {}).get("group", {}))
         except:
             raise UnexpectedBody(f"Return unexcepted response body")
 
@@ -289,7 +289,7 @@ class Client:
             raise UnexpectedBody(f"Return unexcepted response body")
     
         try:
-            member = Member.from_payload(body)
+            member = Member.from_payload(body.get("data", {}).get("member", {}))
         except:
             raise UnexpectedBody(f"Return unexcepted response body")
     
@@ -304,7 +304,7 @@ class Client:
             raise UnexpectedBody(f"Return unexcepted response body")
     
         try:
-            message = Message.from_payload(body)
+            message = Message.from_payload(body.get("data", {}).get("message", {}))
         except:
             raise UnexpectedBody(f"Return unexcepted response body")
     

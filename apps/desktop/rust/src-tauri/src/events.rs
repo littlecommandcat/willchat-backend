@@ -21,6 +21,11 @@ pub fn ser_group(group: &GroupEntry) -> Value {
 pub fn ser_message(msg: &Value, author_name: &str) -> Value {
     let mut data = msg.clone();
     data["author_name"] = json!(author_name);
+    if data.get("author_id").is_none() {
+        if let Some(aid) = msg.get("authorid") {
+            data["author_id"] = aid.clone();
+        }
+    }
     data
 }
 

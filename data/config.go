@@ -9,8 +9,18 @@ import (
 )
 
 const (
-	path          string = ".env"
-	LatestVersion string = "1.0.1"
+	path string = ".env"
+)
+
+type AppLatestVersion struct {
+	Python *string `json:"python,omitempty"`
+	Rust   *string `json:"rust,omitempty"`
+	Cpp    *string `json:"cpp,omitempty"`
+}
+
+var (
+	LatestServerVersion string
+	LatestAppVersion    AppLatestVersion
 )
 
 func LoadEnv() error {
@@ -48,4 +58,12 @@ func LoadEnv() error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 	return nil
+}
+
+func GetEnvPointer(key string) *string {
+	value, exists := os.LookupEnv(key)
+	if !exists || value == "" {
+		return nil
+	}
+	return &value
 }

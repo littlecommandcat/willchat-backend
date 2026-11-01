@@ -5,7 +5,7 @@ import aiohttp
 
 from ..exceptions import UnknownLogin, UnknownSession, UnknownMessage
 from ..cache import _cache_base
-from config import BASE_URL
+from apps.desktop.python.config import BASE_URL
 from ..utils import raise_code_error, is_not_allowed_code
 from .enums import MessageType, ErrorType
 from .group import Group

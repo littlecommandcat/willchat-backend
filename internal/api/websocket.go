@@ -46,7 +46,15 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 	}
 	defer conn.CloseNow()
 	member, err := s.auth.memberByID(memberID)
+	if err != nil {
+		log.Printf("WebSocket member lookup failed: %v", err)
+		return
+	}
 	responseMember, err := s.auth.toMemberResponse(member, false)
+	if err != nil {
+		log.Printf("WebSocket member response failed: %v", err)
+		return
+	}
 	groupRecords := responseMember.GroupRecords
 	groupIDs := []string{}
 	for i := range groupRecords {

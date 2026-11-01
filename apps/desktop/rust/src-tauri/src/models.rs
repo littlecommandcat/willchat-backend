@@ -29,6 +29,7 @@ pub struct GroupEntry {
 
 #[derive(Default)]
 pub struct AppState {
+    pub ws_status: RwLock<String>,
     pub token: RwLock<String>,
     pub current_user: RwLock<MemberInfo>,
     pub groups: RwLock<HashMap<String, GroupEntry>>,

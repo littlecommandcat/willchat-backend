@@ -5,6 +5,7 @@ import threading
 import time
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QUrl
+from PyQt6.QtGui import QGuiApplication
 
 from config import BASE_URL
 from willclient.request import RequestManager, REQUEST_TIMEOUT_SECONDS
@@ -28,6 +29,7 @@ class Bridge(QObject):
 
         self.client = willclient.Client()
         self._token = ""
+        self._ws_status = "red"
         self._current_user = {"id": "", "name": ""}
         self._groups: dict = {}
         self._messages: dict = {}
@@ -83,6 +85,34 @@ class Bridge(QObject):
             logger.exception("[bridge] health check failed")
             return False, "無法連線後端"
         
+    @pyqtSlot(result=str)
+    def health(self) -> str:
+        fut = self.submit(self._check_health())
+
+        def _done(f):
+            try:
+                ok, msg = f.result()
+            except Exception:
+                logger.exception("[bridge] health check failed")
+                ok, msg = False, "無法連線後端"
+            self._emit("health", {"ok": ok, "error": msg})
+
+        fut.add_done_callback(_done)
+        return "pending"
+
+    @pyqtSlot(str, result=str)
+    def copy_to_clipboard(self, text: str) -> str:
+        try:
+            clipboard = QGuiApplication.clipboard()
+            if clipboard is None:
+                return json.dumps({"ok": False, "error": "無法存取剪貼簿"}, ensure_ascii=False)
+            clipboard.setText(text)
+            return json.dumps({"ok": True}, ensure_ascii=False)
+        except Exception as exc:
+            logger.exception("[bridge] copy to clipboard failed")
+            return json.dumps({"ok": False, "error": f"複製失敗：{exc}"}, ensure_ascii=False)
+
+
     @staticmethod
     def _ser_group(g: Group) -> dict:
         return {"id": g.id, "name": g.name, "owner_id": g.owner_id}
@@ -119,6 +149,8 @@ class Bridge(QObject):
         async def on_event(event_type, payload, payload_data):
             event_name = event_type.value if hasattr(event_type, "value") else str(event_type)
             self._emit("server_event", {"event": event_name, "payload": payload})
+            if event_type == EventType.READY:
+                self._emit("websocket_status", {"status": "green"})
             try:
                 self._handle_event(event_type, payload_data)
             except Exception as exc:
@@ -130,6 +162,12 @@ class Bridge(QObject):
             async def on_lifecycle_event(*args, event_type=lifecycle_event):
                 event_name = event_type.value
                 message = str(args[0]) if args else ""
+                status = {
+                    EventType.ERROR: "yellow",
+                    EventType.DISCONNECT: "yellow",
+                    EventType.CLOSE: "red",
+                }[event_type]
+                self._emit("websocket_status", {"status": status, "message": message})
                 self._emit("server_event", {
                     "event": event_name,
                     "payload": {"message": message},
@@ -235,6 +273,8 @@ class Bridge(QObject):
             self._upsert_group(g)
 
     def _emit(self, event_type: str, data: dict) -> None:
+        if event_type == "websocket_status":
+            self._ws_status = data["status"]
         data["type"] = event_type
         self.server_event.emit(json.dumps(data, ensure_ascii=False))
 
@@ -248,10 +288,7 @@ class Bridge(QObject):
         return self._request_async("login", self._async_login(email.strip(), password))
 
     async def _async_login(self, email: str, password: str) -> str:
-        ok, msg = await self._check_health()
-        if not ok:
-            return json.dumps({"ok": False, "error": msg}, ensure_ascii=False)
-
+        _cache_base.init_session()
         try:
             data, token = await RequestManager.login(email, password)
         except Exception as exc:
@@ -275,10 +312,6 @@ class Bridge(QObject):
         return self._request_async("register", self._async_register(username.strip(), email.strip(), password))
 
     async def _async_register(self, username: str, email: str, password: str) -> str:
-        ok, msg = await self._check_health()
-        if not ok:
-            return json.dumps({"ok": False, "error": msg}, ensure_ascii=False)
-
         from willclient.cache import _cache_base
         _cache_base.init_session()
         try:
@@ -320,7 +353,12 @@ class Bridge(QObject):
     def _start_ws(self) -> None:
         if self.client.is_running():
             return
+        self._emit("websocket_status", {"status": "yellow"})
         self.submit(self.client.start(token=self._token))
+
+    @pyqtSlot(result=str)
+    def get_websocket_status(self) -> str:
+        return self._ws_status
 
     @pyqtSlot(result=str)
     def get_state(self) -> str:

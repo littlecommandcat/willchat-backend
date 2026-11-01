@@ -144,6 +144,7 @@
     </div>
 
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="status.js"></script>
 
     <script>
         const form = document.getElementById("loginForm");
@@ -177,6 +178,7 @@
 
         new QWebChannel(qt.webChannelTransport, function(channel) {
             const bridge = channel.objects.bridge;
+            attachWebsocketStatus(bridge);
 
             form.addEventListener("submit", function(event) {
                 event.preventDefault();

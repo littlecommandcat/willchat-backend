@@ -24,6 +24,7 @@ export interface Message {
   reply_to?: { authorid?: string; content?: string } | null;
   status?: string;
   group?: { id: string; name: string } | null;
+  __pending__?: boolean;
 }
 
 export interface ApiResult {
@@ -34,6 +35,7 @@ export interface ApiResult {
 }
 
 export const api = {
+  getWebsocketStatus: () => invoke<string>("get_websocket_status"),
   health: () => invoke<ApiResult>("health"),
   login: (email: string, password: string) =>
     invoke<ApiResult>("login", { email, password }),

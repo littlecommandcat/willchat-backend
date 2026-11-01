@@ -41,6 +41,8 @@ export default function Chat() {
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeGroupRef = useRef<string | null>(null);
+  activeGroupRef.current = activeGroupId;
 
   const showToast = useCallback((text: string) => {
     setToast(text);
@@ -65,7 +67,6 @@ export default function Chat() {
       if (result.ok && result.messages) {
         setMessagesByGroup((prev) => ({ ...prev, [groupId]: result.messages! }));
       } else {
-        setMessagesByGroup((prev) => ({ ...prev, [groupId]: [] }));
         if (result.error) {
           showToast(friendlyError(result as { error?: string; code?: string }, "載入訊息失敗"));
         }
@@ -77,12 +78,9 @@ export default function Chat() {
   const selectGroup = useCallback(
     async (id: string) => {
       setActiveGroupId(id);
-      const cached = messagesByGroup[id];
-      if (!cached) {
-        await loadMessages(id);
-      }
+      await loadMessages(id);
     },
-    [messagesByGroup, loadMessages]
+    [loadMessages]
   );
 
   const handleServerEvent = useCallback(
@@ -90,15 +88,20 @@ export default function Chat() {
       switch (evt.type) {
         case "ready":
           await applyState();
+          if (activeGroupRef.current) await loadMessages(activeGroupRef.current);
           break;
         case "message_send": {
           const gid = evt.group_id as string | undefined;
           const msg = evt.message as Message | undefined;
           if (gid && msg) {
-            setMessagesByGroup((prev) => ({
-              ...prev,
-              [gid]: [...(prev[gid] || []), msg],
-            }));
+            setMessagesByGroup((prev) => {
+              const list = prev[gid] || [];
+              const filtered = list.filter(
+                (m) =>
+                  !(m.__pending__ && m.author_id === msg.author_id && m.content === msg.content)
+              );
+              return { ...prev, [gid]: [...filtered.filter((m) => m.id !== msg.id), msg] };
+            });
           }
           break;
         }
@@ -179,24 +182,25 @@ export default function Chat() {
           break;
         }
         case "error":
-          showToast((evt.message as string) || "連線發生錯誤");
           break;
         default:
           break;
       }
     },
-    [applyState, showToast]
+    [applyState, loadMessages]
   );
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     const init = async () => {
+      const stop = await onServerEvent(handleServerEvent);
+      if (cancelled) { stop(); return; }
+      unlisten = stop;
       const data = await api.getState();
       if (cancelled) return;
       setCurrentUser(data.member || { id: "", name: "" });
       setGroups(data.groups || []);
-      unlisten = await onServerEvent(handleServerEvent);
     };
     init();
     return () => {
@@ -224,6 +228,45 @@ export default function Chat() {
       await applyState();
     }
   };
+  const joinByPaste = async () => {
+    const groupId = window.prompt("請貼上群組 ID：", "");
+    if (groupId === null) return;
+    await joinGroup(groupId.trim());
+  };
+  const copyGroupId = async (groupId: string) => {
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(groupId);
+        copied = true;
+      }
+    } catch {
+      copied = false;
+    }
+    if (!copied) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = groupId;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        copied = false;
+      }
+    }
+    if (copied) {
+      showToast("已複製群組 ID");
+    } else {
+      showToast("複製失敗，請手動複製");
+    }
+  };
+
+
+
+
 
   const leaveGroup = async (groupId: string) => {
     const result = await api.leaveGroup(groupId);
@@ -261,8 +304,26 @@ export default function Chat() {
     const text = draft.trim();
     if (!text) return;
     setDraft("");
+    const pendingId = `__pending__${Date.now()}`;
+    const pendingMsg: Message = {
+      id: pendingId,
+      author_id: currentUser.id,
+      author_name: currentUser.name,
+      content: text,
+      timestamp: Date.now(),
+      type: 0,
+      __pending__: true,
+    };
+    setMessagesByGroup((prev) => ({
+      ...prev,
+      [activeGroupId]: [...(prev[activeGroupId] || []), pendingMsg],
+    }));
     const result = await api.sendMessage(activeGroupId, text);
     if (!result.ok) {
+      setMessagesByGroup((prev) => ({
+        ...prev,
+        [activeGroupId]: (prev[activeGroupId] || []).filter((m) => m.id !== pendingId),
+      }));
       showToast(friendlyError(result as { error?: string; code?: string }, "傳送失敗"));
     }
   };
@@ -277,9 +338,14 @@ export default function Chat() {
       <aside className="sidebar">
         <div className="sidebar-header">
           <span>群組</span>
-          <button className="sidebar-action" title="新增群組" onClick={createGroup}>
-            ＋
-          </button>
+          <div className="sidebar-actions">
+            <button className="sidebar-action" title="貼上 ID 加入群組" onClick={joinByPaste}>
+              ⤵
+            </button>
+            <button className="sidebar-action" title="新增群組" onClick={createGroup}>
+              ＋
+            </button>
+          </div>
         </div>
         <ul className="group-list">
           {groups.map((group) => {
@@ -294,6 +360,7 @@ export default function Chat() {
                 <div className="group-name">{group.name}</div>
                 <div className="group-members">{group.members.length} 位成員</div>
                 <div className="group-actions" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => copyGroupId(group.id)}>複製 ID</button>
                   {isMember && !isOwner && (
                     <button onClick={() => leaveGroup(group.id)}>退出</button>
                   )}

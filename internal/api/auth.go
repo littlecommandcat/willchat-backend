@@ -11,33 +11,40 @@ import (
 	"strings"
 	"sync"
 
-	"willchat-backend/internal/core"
-
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+
+	"willchat-backend/internal/core"
 )
 
 var (
-	errInvalidCredentials = errors.New("invalid email or password")
-	errRedisUnavailable   = errors.New("redis is unavailable")
+	errInvalidCredentials  = errors.New("invalid email or password")
+	errDatabaseUnavailable = errors.New("database is unavailable")
 )
 
 const maxnameLength = 50
 
+// queryExecer is satisfied by both *pgxpool.Pool and pgx.Tx so the same
+// data-access helpers can run inside a transaction or against the pool.
+type queryExecer interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
+
 type Service struct {
-	redis     *redis.Client
+	db        *pgxpool.Pool
 	snowflake *core.Snowflake
 	hub       *core.Hub
 	mu        sync.RWMutex
 }
 
-func NewService(redisClient *redis.Client, snowflake *core.Snowflake) (*Service, error) {
-	service := &Service{
-		redis:     redisClient,
+func NewService(db *pgxpool.Pool, snowflake *core.Snowflake) (*Service, error) {
+	return &Service{
+		db:        db,
 		snowflake: snowflake,
-	}
-	return service, nil
+	}, nil
 }
 
 func (s *Service) SetHub(hub *core.Hub) {
@@ -55,11 +62,14 @@ func (s *Service) Register(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.memberByEmail(request.Email); err == nil {
-		writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+
+	exists, err := s.memberExistsByEmail(request.Email)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
-	} else if !errors.Is(err, redis.Nil) {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+	}
+	if exists {
+		writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
 		return
 	}
 
@@ -69,28 +79,44 @@ func (s *Service) Register(c *gin.Context) {
 		return
 	}
 
-	// Pointer is trash
 	block := []string{}
 	read := make(map[string]string)
 	member := core.MemberData{Id: s.snowflake.Next(), Name: request.Name, Email: request.Email, PasswordHash: string(hash), Block: block, Read: read}
 
-	token, err := s.createToken(member.Id)
+	tx, err := s.db.Begin(context.Background())
 	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+	defer tx.Rollback(context.Background())
+
+	if err := s.storeMember(tx, member); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+
+	token, err := s.createToken(tx, member.Id)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 	member.Token = token
-	if err := s.storeMember(member); err != nil {
-		_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+
+	if err := s.storeMember(tx, member); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+	if err := tx.Commit(context.Background()); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 
 	responseMember, err := s.toMemberResponse(member, false)
 	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
+
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"token":  token,
 		"member": responseMember,
@@ -105,34 +131,33 @@ func (s *Service) Login(c *gin.Context) {
 	request.Email = normalizeEmail(request.Email)
 
 	member, err := s.memberByEmail(request.Email)
-	if err != nil && !errors.Is(err, redis.Nil) {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
-	if errors.Is(err, redis.Nil) || bcrypt.CompareHashAndPassword([]byte(member.PasswordHash), []byte(request.Password)) != nil {
+	if errors.Is(err, pgx.ErrNoRows) || bcrypt.CompareHashAndPassword([]byte(member.PasswordHash), []byte(request.Password)) != nil {
 		writeError(c, http.StatusUnauthorized, "invalid_credentials", errInvalidCredentials.Error())
 		return
 	}
+
 	token := member.Token
-	log.Printf("Get token: %s", token)
 	if core.SafeCompare(token, "") || !s.tokenBelongsToMember(token, s.snowflake.ToSnowflake(member.Id)) {
-		token, err = s.createToken(member.Id)
+		token, err = s.createToken(s.db, member.Id)
 		if err != nil {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
 		member.Token = token
-		storeErr := s.storeMember(member)
-		if storeErr != nil {
-			_ = s.redis.Del(context.Background(), tokenKey(token)).Err()
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		if err := s.storeMember(s.db, member); err != nil {
+			s.deleteToken(token)
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
 	}
 
 	responseMember, err := s.toMemberResponse(member, false)
 	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
@@ -140,8 +165,6 @@ func (s *Service) Login(c *gin.Context) {
 		"member": responseMember,
 	}})
 }
-
-// I dont think  we need logout route if we have websocket
 
 func (s *Service) RequireToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -151,25 +174,14 @@ func (s *Service) RequireToken() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		value, err := s.redis.Get(context.Background(), tokenKey(token)).Result()
-		if err == redis.Nil {
-			writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
-			c.Abort()
-			return
-		}
-		if err != nil {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-			c.Abort()
-			return
-		}
-		var currentToken tokenRecord
-		if json.Unmarshal([]byte(value), &currentToken) != nil || currentToken.MemberID == "" {
+		memberID, ok := s.validateToken(token)
+		if !ok {
 			writeError(c, http.StatusUnauthorized, "invalid_token", "token is invalid")
 			c.Abort()
 			return
 		}
 		c.Set("token", token)
-		c.Set("member_id", s.snowflake.ToMemberID(currentToken.MemberID))
+		c.Set("member_id", memberID)
 		c.Next()
 	}
 }
@@ -180,14 +192,14 @@ func (s *Service) Me(c *gin.Context) {
 	if err == nil {
 		responseMember, responseErr := s.toMemberResponse(member, false)
 		if responseErr != nil {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
 		c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 		return
 	}
-	if !errors.Is(err, redis.Nil) {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+	if !errors.Is(err, pgx.ErrNoRows) {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 	writeError(c, http.StatusNotFound, "member_not_found", "member not found")
@@ -207,10 +219,11 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 	memberID, _ := c.Get("member_id")
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	member, err := s.memberByID(memberID.(string))
 	if err != nil {
-		if !errors.Is(err, redis.Nil) {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
 		writeError(c, http.StatusNotFound, "member_not_found", "member not found")
@@ -225,6 +238,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		}
 		member.Name = username
 	}
+
 	newEmail := member.Email
 	if request.Email != nil {
 		newEmail = normalizeEmail(*request.Email)
@@ -232,40 +246,41 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 			writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
 			return
 		}
-		if existing, err := s.memberByEmail(newEmail); err == nil {
-			if existing.Id != member.Id {
+		exists, err := s.memberExistsByEmail(newEmail)
+		if err != nil {
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+			return
+		}
+		if exists {
+			existing, err := s.memberByEmail(newEmail)
+			if err == nil && existing.Id != member.Id {
 				writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
 				return
 			}
-		} else if !errors.Is(err, redis.Nil) {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-			return
 		}
 		member.Email = newEmail
 	}
 
-	if err := s.storeMember(member); err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+	if err := s.storeMember(s.db, member); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
+
 	responseMember, responseErr := s.toMemberResponse(member, false)
 	if responseErr != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 	memberWSResponse, responseErr := s.toMemberResponse(member, true)
 	if responseErr != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
-	s.hub.BroadcastAll(
-		core.WSEvent{
-			Event: core.WSEventEnum.ProfileUpdate,
-			Payload: gin.H{
-				"member": memberWSResponse,
-			},
-		},
-	)
+
+	s.hub.BroadcastAll(core.WSEvent{
+		Event: core.WSEventEnum.ProfileUpdate,
+		Payload: gin.H{"member": memberWSResponse},
+	})
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 }
 
@@ -307,10 +322,11 @@ func (s *Service) ResetPassword(c *gin.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	member, err := s.memberByID(memberIDValue)
 	if err != nil {
-		if !errors.Is(err, redis.Nil) {
-			writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		if !errors.Is(err, pgx.ErrNoRows) {
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
 		writeError(c, http.StatusNotFound, "member_not_found", "member not found")
@@ -328,151 +344,135 @@ func (s *Service) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	newToken, err := s.createToken(member.Id)
+	newToken, err := s.createToken(s.db, member.Id)
 	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
 	member.PasswordHash = string(hash)
 	member.Token = newToken
-	if err := s.storeMember(member); err != nil {
-		_ = s.redis.Del(context.Background(), tokenKey(newToken)).Err()
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
+	if err := s.storeMember(s.db, member); err != nil {
+		s.deleteToken(newToken)
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
-	if err := s.redis.Del(context.Background(), tokenKey(oldTokenValue)).Err(); err != nil {
-		writeError(c, http.StatusServiceUnavailable, "redis_unavailable", errRedisUnavailable.Error())
-		return
-	}
+	s.deleteToken(oldTokenValue)
+
 	if s.hub != nil {
 		s.hub.CloseMember(member.Id)
 	}
-	// Status 204
 	c.Status(http.StatusNoContent)
 }
 
 func (s *Service) tokenBelongsToMember(token, memberID string) bool {
-	value, err := s.redis.Get(context.Background(), tokenKey(token)).Result()
+	memberID = s.snowflake.ToSnowflake(memberID)
+	var id string
+	err := s.db.QueryRow(context.Background(),
+		`SELECT member_id FROM tokens WHERE token = $1`, token).Scan(&id)
 	if err != nil {
 		return false
 	}
-	var record tokenRecord
-	return json.Unmarshal([]byte(value), &record) == nil && s.snowflake.ToSnowflake(record.MemberID) == s.snowflake.ToSnowflake(memberID)
+	return id == memberID
 }
 
 func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberResponse, error) {
+	ctx := context.Background()
 	memberID := s.snowflake.ToSnowflake(member.Id)
-	ownedIDs, err := s.redis.SMembers(context.Background(), ownedGroupsKey(memberID)).Result()
+
+	rows, err := s.db.Query(ctx, `
+		SELECT g.id, g.name, g.owner_id, g.created_at
+		FROM groups g
+		JOIN group_members gm ON gm.group_id = g.id
+		WHERE gm.member_id = $1
+		ORDER BY g.created_at ASC`, memberID)
 	if err != nil {
-		log.Printf("getMember: %s", err)
 		return memberResponse{}, err
 	}
-	joinedIDs, err := s.redis.SMembers(context.Background(), memberGroupsKey(memberID)).Result()
-	if err != nil {
-		log.Printf("getMember joined groups: %s", err)
+	defer rows.Close()
+
+	groupData := make([]groupResponse, 0)
+	for rows.Next() {
+		var g groupRecord
+		if err := rows.Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt); err != nil {
+			return memberResponse{}, err
+		}
+		g.GroupID = g.ID
+		groupData = append(groupData, toGroupResponse(s.snowflake, g))
+	}
+	if err := rows.Err(); err != nil {
 		return memberResponse{}, err
 	}
-	groupIDs := make([]string, 0, len(ownedIDs)+len(joinedIDs))
-	seen := make(map[string]struct{}, len(ownedIDs)+len(joinedIDs))
-	for _, id := range append(ownedIDs, joinedIDs...) {
-		id = s.snowflake.ToSnowflake(id)
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		groupIDs = append(groupIDs, id)
-	}
-	groupData := make([]groupResponse, 0, len(groupIDs))
-	for i := 0; i < len(groupIDs); i += 1 {
-		group, err := s.getGroup(groupIDs[i])
-		if err != nil {
-			log.Printf("getGroup %s failed: %v", groupIDs[i], err)
-			continue
-		}
-		groupData = append(groupData, toGroupResponse(s.snowflake, group))
-	}
-	blockData := make([]string, 0, len(member.Block))
-	readData := make(map[string]string, len(member.Read))
+
 	if limit {
-		groupData = make([]groupResponse, 0)
-		return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Block: blockData, GroupRecords: groupData, Read: readData}, nil
+		return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Block: []string{}, GroupRecords: make([]groupResponse, 0), Read: map[string]string{}}, nil
 	}
-	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: blockData, Read: readData}, nil
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: member.Block, Read: member.Read}, nil
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
-	value, err := s.redis.Get(context.Background(), groupKey(groupID)).Result()
+	groupID = s.snowflake.ToSnowflake(groupID)
+	var g groupRecord
+	err := s.db.QueryRow(context.Background(),
+		`SELECT id, name, owner_id, created_at FROM groups WHERE id = $1`,
+		groupID).Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt)
 	if err != nil {
 		return groupRecord{}, err
 	}
-	var group groupRecord
-	if err := json.Unmarshal([]byte(value), &group); err != nil {
-		return groupRecord{}, err
-	}
-	if group.GroupID == "" {
-		group.GroupID = group.ID
-	}
-	group.GroupID = s.snowflake.ToGroupID(group.GroupID)
-	group.OwnerID = s.snowflake.ToMemberID(group.OwnerID)
-	return group, nil
+	g.GroupID = g.ID
+	g.OwnerID = s.snowflake.ToMemberID(g.OwnerID)
+	return g, nil
 }
 
-func (s *Service) createToken(memberID string) (string, error) {
+func (s *Service) createToken(q queryExecer, memberID string) (string, error) {
 	memberID = s.snowflake.ToSnowflake(memberID)
 	token := newToken()
-	key := tokenKey(token)
-	payload, err := json.Marshal(tokenRecord{MemberID: memberID})
+	_, err := q.Exec(context.Background(),
+		`INSERT INTO tokens (token, member_id) VALUES ($1, $2)`, token, memberID)
 	if err != nil {
-		log.Printf("redis token marshal failed key=%s: %v", key, err)
+		log.Printf("db token write failed member_id=%s: %v", memberID, err)
 		return "", err
 	}
-	// expiration=0 token
-	if err := s.redis.Set(context.Background(), key, payload, 0).Err(); err != nil {
-		log.Printf("redis token write failed key=%s: %v", key, err)
-		return "", err
-	}
-	storedPayload, err := s.redis.Get(context.Background(), key).Result()
-	if err != nil {
-		log.Printf("redis token read-back failed key=%s: %v", key, err)
-		return "", err
-	}
-	if storedPayload != string(payload) {
-		log.Printf("redis token read-back mismatch key=%s", key)
-		return "", errors.New("redis token verification failed")
-	}
-	log.Printf("redis token stored member_id=%s", memberID)
 	return token, nil
 }
 
-func (s *Service) storeMember(member core.MemberData) error {
-	key := memberKey(member.Id)
-	payload, err := json.Marshal(redisMemberRecord{ID: member.Id, Name: member.Name, Email: member.Email, PasswordHash: member.PasswordHash, Token: member.Token, Block: member.Block, Read: member.Read})
+func (s *Service) deleteToken(token string) {
+	_, err := s.db.Exec(context.Background(),
+		`DELETE FROM tokens WHERE token = $1`, token)
 	if err != nil {
-		log.Printf("redis member marshal failed key=%s: %v", key, err)
-		return err
+		log.Printf("db token delete failed: %v", err)
 	}
-	if err := s.redis.Set(context.Background(), key, payload, 0).Err(); err != nil {
-		log.Printf("redis member write failed key=%s: %v", key, err)
-		return err
-	}
-	storedPayload, err := s.redis.Get(context.Background(), key).Result()
+}
+
+func (s *Service) storeMember(q queryExecer, member core.MemberData) error {
+	_, err := q.Exec(context.Background(), `
+		INSERT INTO members (id, name, email, password_hash, token, block, read, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO UPDATE SET
+			name = EXCLUDED.name,
+			email = EXCLUDED.email,
+			password_hash = EXCLUDED.password_hash,
+			token = EXCLUDED.token,
+			block = EXCLUDED.block,
+			read = EXCLUDED.read`,
+		member.Id,
+		member.Name,
+		normalizeEmail(member.Email),
+		member.PasswordHash,
+		member.Token,
+		jsonMarshal(member.Block),
+		jsonMarshal(member.Read),
+		s.snowflake.ToTime(member.Id))
 	if err != nil {
-		log.Printf("redis member read-back failed key=%s: %v", key, err)
+		log.Printf("db member write failed id=%s: %v", member.Id, err)
 		return err
 	}
-	if storedPayload != string(payload) {
-		log.Printf("redis member read-back mismatch key=%s", key)
-		return errors.New("redis member verification failed")
-	}
-	log.Printf("redis member stored key=%s", key)
 	return nil
 }
 
 func (s *Service) canCreateGroup(memberID string) (bool, error) {
-	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(memberID)).Result()
+	var count int
+	err := s.db.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM groups WHERE owner_id = $1`, memberID).Scan(&count)
 	if err != nil {
 		return false, err
 	}
@@ -482,14 +482,18 @@ func (s *Service) canCreateGroup(memberID string) (bool, error) {
 func (s *Service) addOwnedGroup(memberID, groupID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	count, err := s.redis.SCard(context.Background(), ownedGroupsKey(memberID)).Result()
+	canCreate, err := s.canCreateGroup(memberID)
 	if err != nil {
 		return err
 	}
-	if count >= maxOwnedGroups {
+	if !canCreate {
 		return errGroupLimitReached
 	}
-	return s.redis.SAdd(context.Background(), ownedGroupsKey(memberID), groupID).Err()
+	_, err = s.db.Exec(context.Background(),
+		`INSERT INTO groups (id, name, owner_id, created_at) VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (id) DO NOTHING`,
+		groupID, "", memberID, s.snowflake.ToTime(groupID))
+	return err
 }
 
 func bindCredentials(c *gin.Context, request *credentialsRequest) bool {
@@ -508,8 +512,6 @@ func memberToken(c *gin.Context) (string, bool) {
 	return token, true
 }
 
-func tokenKey(token string) string       { return "token:" + token }
-func memberKey(memberID string) string   { return "member:" + memberID }
 func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
 
 func newToken() string {
@@ -523,3 +525,78 @@ func newToken() string {
 func writeError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, core.Response{Status: "error", Code: code, Message: message})
 }
+
+
+func jsonMarshal(v any) any {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return string(data)
+}
+
+func (s *Service) memberByID(memberID string) (core.MemberData, error) {
+	memberID = s.snowflake.ToSnowflake(memberID)
+	var m core.MemberData
+	var block string
+	var read string
+	err := s.db.QueryRow(context.Background(), `
+		SELECT id, name, email, password_hash, token, block, read
+		FROM members WHERE id = $1`, memberID).
+		Scan(&m.Id, &m.Name, &m.Email, &m.PasswordHash, &m.Token, &block, &read)
+	if err != nil {
+		return core.MemberData{}, err
+	}
+	m.Id = s.snowflake.ToMemberID(m.Id)
+	if err := json.Unmarshal([]byte(block), &m.Block); err != nil {
+		m.Block = []string{}
+	}
+	if err := json.Unmarshal([]byte(read), &m.Read); err != nil {
+		m.Read = make(map[string]string)
+	}
+	return m, nil
+}
+
+func (s *Service) memberByEmail(email string) (core.MemberData, error) {
+	email = normalizeEmail(email)
+	var m core.MemberData
+	var block string
+	var read string
+	err := s.db.QueryRow(context.Background(), `
+		SELECT id, name, email, password_hash, token, block, read
+		FROM members WHERE email = $1`, email).
+		Scan(&m.Id, &m.Name, &m.Email, &m.PasswordHash, &m.Token, &block, &read)
+	if err != nil {
+		return core.MemberData{}, err
+	}
+	m.Id = s.snowflake.ToMemberID(m.Id)
+	if err := json.Unmarshal([]byte(block), &m.Block); err != nil {
+		m.Block = []string{}
+	}
+	if err := json.Unmarshal([]byte(read), &m.Read); err != nil {
+		m.Read = make(map[string]string)
+	}
+	return m, nil
+}
+
+func (s *Service) memberExistsByEmail(email string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRow(context.Background(),
+		`SELECT EXISTS(SELECT 1 FROM members WHERE email = $1)`, normalizeEmail(email)).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (s *Service) validateToken(token string) (string, bool) {
+	var memberID string
+	err := s.db.QueryRow(context.Background(),
+		`SELECT member_id FROM tokens WHERE token = $1`, token).Scan(&memberID)
+	if err != nil {
+		return "", false
+	}
+	return s.snowflake.ToMemberID(memberID), true
+}
+
+

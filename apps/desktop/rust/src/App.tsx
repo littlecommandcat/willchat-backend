@@ -2,6 +2,7 @@ import { useState } from "react";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Chat from "./pages/Chat";
+import StatusIcon from "./StatusIcon";
 
 type Page = "login" | "register" | "chat";
 
@@ -27,15 +28,16 @@ function App() {
   };
 
   if (page === "register") {
-    return <Register onDone={handleRegisterDone} />;
+    return <><StatusIcon /><Register onDone={handleRegisterDone} /></>;
   }
 
   if (page === "chat") {
-    return <Chat />;
+    return <><StatusIcon /><Chat /></>;
   }
 
   return (
     <>
+      <StatusIcon />
       {registered && (
         <div id="toast" className="toast visible" style={{ zIndex: 2000 }}>
           註冊成功

@@ -125,6 +125,11 @@ body {
   background: #333;
 }
 
+.sidebar-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .group-list {
   flex: 1;
   overflow-y: auto;
@@ -364,4 +369,36 @@ body {
 .toast.visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+.api-indicator {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #ddd;
+  z-index: 1001;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.api-indicator circle {
+  fill: currentColor;
+}
+
+.api-indicator.green {
+  color: #2ecc40;
+}
+
+.api-indicator.yellow {
+  color: #ff851b;
+}
+
+.api-indicator.red {
+  color: #ff4136;
 }

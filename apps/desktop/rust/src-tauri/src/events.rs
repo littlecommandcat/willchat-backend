@@ -21,6 +21,11 @@ pub fn ser_group(group: &GroupEntry) -> Value {
 pub fn ser_message(msg: &Value, author_name: &str) -> Value {
     let mut data = msg.clone();
     data["author_name"] = json!(author_name);
+    if data.get("author_id").is_none() {
+        if let Some(aid) = msg.get("authorid") {
+            data["author_id"] = aid.clone();
+        }
+    }
     data
 }
 
@@ -40,6 +45,10 @@ pub async fn resolve_member_name(state: &SharedState, member_id: &str) -> String
     "成員".to_string()
 }
 
+fn ready_member(payload: &Value) -> &Value {
+    payload.get("member").filter(|m| m.is_object()).unwrap_or(payload)
+}
+
 pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value) {
     let event_type = event
         .get("event")
@@ -53,9 +62,10 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
 
     match event_type.as_str() {
         "ready" => {
-            if let Some(m) = member {
-                crate::client::rebuild_groups(state, &m).await;
-            }
+            let m = ready_member(&payload);
+            crate::client::rebuild_groups(state, m).await;
+            state.messages.write().await.clear();
+            crate::ws::set_status(state, app, "connected").await;
             let _ = app.emit("willchat:event", json!({"type": "ready"}));
         }
         "message_send" => {
@@ -75,10 +85,10 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
                 let ser = ser_message(&msg, &author_name);
                 if !gid.is_empty() {
                     let mut messages = state.messages.write().await;
-                    messages
-                        .entry(gid.clone())
-                        .or_insert_with(Vec::new)
-                        .push(ser.clone());
+                    let list = messages.entry(gid.clone()).or_insert_with(Vec::new);
+                    if !list.iter().any(|m| m.get("id") == ser.get("id")) {
+                        list.push(ser.clone());
+                    }
                 }
                 let _ = app.emit(
                     "willchat:event",
@@ -198,6 +208,33 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
             );
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn ready_rebuilds_groups_for_current_and_legacy_payloads() {
+        let member = json!({
+            "id": "alice", "name": "Alice",
+            "groups": [{"group_id": "chat", "name": "Chat", "owner_id": "alice"}]
+        });
+        for payload in [member.clone(), json!({"member": member})] {
+            let state = Arc::new(crate::models::AppState::default());
+            crate::client::rebuild_groups(&state, ready_member(&payload)).await;
+            assert_eq!(state.current_user.read().await.id, "alice");
+            assert!(state.groups.read().await.contains_key("chat"));
+        }
+    }
+
+    #[test]
+    fn message_normalizes_backend_author_id() {
+        let message = ser_message(&json!({"id": "message", "authorid": "alice"}), "Alice");
+        assert_eq!(message["author_id"], "alice");
+        assert_eq!(message["author_name"], "Alice");
     }
 }
 

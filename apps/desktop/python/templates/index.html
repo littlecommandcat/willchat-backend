@@ -6,35 +6,43 @@
     <title>WillChat | 登入</title>
 
     <style>
-        body {
+        * {
             margin: 0;
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
             font-family: Arial, sans-serif;
             background: #fff;
             color: #000;
         }
 
-        form {
+        .auth-body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .auth-form {
             width: 300px;
             padding: 30px;
             border: 1px solid #000;
             border-radius: 8px;
         }
 
-        h2 {
+        .auth-form h2 {
             text-align: center;
             margin-top: 0;
         }
 
-        label {
+        .auth-form label {
             display: block;
             margin-top: 15px;
         }
 
-        input {
+        .auth-form input {
             width: 100%;
             padding: 10px;
             margin-top: 8px;
@@ -43,7 +51,7 @@
             box-sizing: border-box;
         }
 
-        button {
+        .auth-form button {
             width: 100%;
             padding: 10px;
             margin-top: 20px;
@@ -54,27 +62,32 @@
             cursor: pointer;
         }
 
-        button:hover {
+        .auth-form button:hover {
             background: #333;
         }
 
-        p {
+        .auth-form button:disabled {
+            background: #777;
+            cursor: not-allowed;
+        }
+
+        .auth-form p {
             text-align: center;
             font-size: 14px;
             margin-bottom: 0;
         }
 
-        a {
+        .auth-form a {
             color: #000;
         }
 
-        #message {
+        .auth-message {
             text-align: center;
             font-size: 14px;
             margin-top: 15px;
         }
 
-        #toast {
+        .toast {
             position: fixed;
             top: 20px;
             right: 20px;
@@ -90,7 +103,7 @@
             z-index: 1000;
         }
 
-        #toast.visible {
+        .toast.visible {
             opacity: 1;
             transform: translateY(0);
         }
@@ -98,38 +111,40 @@
 </head>
 
 <body>
-    <div id="toast"></div>
+    <div id="toast" class="toast"></div>
 
-    <form id="loginForm">
-        <h2>WillChat</h2>
+    <div class="auth-body">
+        <form id="loginForm" class="auth-form">
+            <h2>WillChat</h2>
 
-        <label for="email">電子郵件</label>
-        <input
-            type="email"
-            id="email"
-            name="email"
-            autocomplete="email"
-            required
-        >
+            <label for="email">電子郵件</label>
+            <input
+                type="email"
+                id="email"
+                name="email"
+                autocomplete="email"
+                required
+            >
 
-        <label for="password">密碼</label>
-        <input
-            type="password"
-            id="password"
-            name="password"
-            autocomplete="current-password"
-            required
-        >
+            <label for="password">密碼</label>
+            <input
+                type="password"
+                id="password"
+                name="password"
+                autocomplete="current-password"
+                required
+            >
 
-        <button type="submit" id="loginButton">登入</button>
+            <button type="submit" id="loginButton">登入</button>
 
-        <p>還沒有帳號？<a href="register.html">立即註冊</a></p>
-        <p>免費帳號？<a href="#" id="rickroll">立即取得</a></p>
+            <p>還沒有帳號？<a href="register.html">立即註冊</a></p>
 
-        <p id="message" role="status"></p>
-    </form>
+            <p id="message" class="auth-message" role="status"></p>
+        </form>
+    </div>
 
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="status.js"></script>
 
     <script>
         const form = document.getElementById("loginForm");
@@ -145,6 +160,17 @@
             }, 3000);
         }
 
+        const errorCodeMap = {
+            "invalid_credentials": "帳號或密碼錯誤",
+            "email_already_registered": "此 Email 已註冊"
+        };
+
+        function friendlyError(data, fallback) {
+            if (data && data.code && errorCodeMap[data.code]) return errorCodeMap[data.code];
+            if (data && data.error) return data.error;
+            return fallback;
+        }
+
         const params = new URLSearchParams(window.location.search);
         if (params.get("registered") === "1") {
             showToast("註冊成功");
@@ -152,11 +178,7 @@
 
         new QWebChannel(qt.webChannelTransport, function(channel) {
             const bridge = channel.objects.bridge;
-
-            document.getElementById("rickroll").addEventListener("click", function(event) {
-                event.preventDefault();
-                bridge.navigate("/rick");
-            });
+            attachWebsocketStatus(bridge);
 
             form.addEventListener("submit", function(event) {
                 event.preventDefault();
@@ -166,6 +188,12 @@
 
                 if (!email || !password) {
                     message.textContent = "請輸入帳號與密碼";
+                    return;
+                }
+
+                const isGmail = /^[a-zA-Z0-9._%+-]+@gmail.com$/.test(email);
+                if (!isGmail || password.length < 8) {
+                    message.textContent = "帳號或密碼錯誤";
                     return;
                 }
 
@@ -186,7 +214,7 @@
                     message.textContent = "登入成功";
                     window.location.href = "chat.html";
                 } else {
-                    message.textContent = data.error || "登入失敗";
+                    message.textContent = friendlyError(data, "登入失敗");
                 }
             });
         });

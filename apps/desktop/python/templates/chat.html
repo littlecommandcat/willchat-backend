@@ -49,6 +49,11 @@
         .group-item.active .group-actions button:hover { background: #222; }
         #toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; background: #000; color: #fff; border-radius: 6px; font-size: 14px; opacity: 0; transform: translateY(-10px); transition: opacity 0.3s ease, transform 0.3s ease; pointer-events: none; z-index: 1000; }
         #toast.visible { opacity: 1; transform: translateY(0); }
+        #apiIndicator { position: fixed; top: 14px; right: 14px; width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 1px solid #ddd; display: flex; align-items: center; justify-content: center; z-index: 1001; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+        #apiIndicator svg { display: block; }
+        #apiIndicator.green circle { fill: #2ecc40; }
+        #apiIndicator.yellow circle { fill: #ff851b; }
+        #apiIndicator.red circle { fill: #ff4136; }
     </style>
 </head>
 <body>
@@ -57,7 +62,10 @@
         <aside class="sidebar">
             <div class="sidebar-header" style="display:flex;align-items:center;justify-content:space-between;">
                 <span>群組</span>
-                <button id="createGroupBtn" class="sidebar-action" title="新增群組">＋</button>
+                <div style="display:flex;gap:6px;">
+                    <button id="joinByPasteBtn" class="sidebar-action" title="貼上 ID 加入群組">⤵</button>
+                    <button id="createGroupBtn" class="sidebar-action" title="新增群組">＋</button>
+                </div>
             </div>
             <ul class="group-list" id="groupList"></ul>
         </aside>
@@ -67,7 +75,7 @@
                 <div class="message-empty" id="messageEmpty">選擇左側群組開始聊天</div>
             </div>
             <div class="chat-input">
-                <input type="text" id="messageInput" placeholder="輸入訊息..." disabled>
+                <input type="text" id="messageInput" placeholder="輸入訊息..." maxlength="2000" disabled>
                 <button id="sendButton" disabled>傳送</button>
             </div>
         </main>
@@ -77,6 +85,7 @@
         </aside>
     </div>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <script src="status.js"></script>
     <script>
         const currentUser = { id: "", name: "" };
         let groups = [];
@@ -91,6 +100,7 @@
         const messageInput = document.getElementById("messageInput");
         const sendButton = document.getElementById("sendButton");
         const createGroupBtn = document.getElementById("createGroupBtn");
+        const joinByPasteBtn = document.getElementById("joinByPasteBtn");
         const toast = document.getElementById("toast");
 
         function showToast(text) {
@@ -151,6 +161,14 @@
                 li.appendChild(count);
                 const actions = document.createElement("div");
                 actions.className = "group-actions";
+                const copyBtn = document.createElement("button");
+                copyBtn.textContent = "複製 ID";
+                copyBtn.title = "複製群組 ID";
+                copyBtn.addEventListener("click", function (e) {
+                    e.stopPropagation();
+                    copyGroupId(group.id);
+                });
+                actions.appendChild(copyBtn);
                 const isOwner = group.owner_id === currentUser.id;
                 const isMember = (group.members || []).some(function (m) { return m.id === currentUser.id; });
                 if (isMember && !isOwner) {
@@ -252,7 +270,7 @@
         }
 
         function loadMessages(groupId) {
-            if (messagesByGroup[groupId]) { renderMessages(); return; }
+            if (messagesByGroup[groupId]) renderMessages();
             bridge.get_messages(groupId);
         }
 
@@ -289,7 +307,9 @@
                 const gid = evt.group_id || (evt.group && evt.group.id);
                 if (gid) {
                     if (!messagesByGroup[gid]) messagesByGroup[gid] = [];
-                    messagesByGroup[gid].push(evt.message);
+                    if (evt.message && !messagesByGroup[gid].some(function (m) { return m.id === evt.message.id; })) {
+                        messagesByGroup[gid].push(evt.message);
+                    }
                     if (activeGroupId === gid) renderMessages();
                 }
                 return;
@@ -359,19 +379,40 @@
                 }
                 return;
             }
-            if (evt.type === "error") { showToast(evt.message || "連線發生錯誤"); }
         }
         function promptCreateGroup() {
             const name = window.prompt("請輸入群組名稱：", "");
             if (name === null) return;
             bridge.create_group(name.trim());
         }
+        function promptJoinByPaste() {
+            const groupId = window.prompt("請貼上群組 ID：", "");
+            if (groupId === null) return;
+            joinGroup(groupId.trim());
+        }
+
         function joinGroup(groupId) { bridge.join_group(groupId); }
         function leaveGroup(groupId) { bridge.leave_group(groupId); }
         function deleteGroup(groupId) {
             if (!window.confirm("確定要刪除此群組？")) return;
             bridge.delete_group(groupId);
         }
+        function copyGroupId(groupId) {
+            if (bridge && bridge.copy_to_clipboard) {
+                bridge.copy_to_clipboard(groupId, function (result) {
+                    let data = null;
+                    try { data = JSON.parse(result); } catch (e) { data = null; }
+                    if (data && data.ok) {
+                        showToast("已複製群組 ID");
+                    } else {
+                        showToast(data && data.error || "複製失敗，請手動複製");
+                    }
+                });
+            } else {
+                showToast("複製失敗，請手動複製");
+            }
+        }
+
         function sendMessage() {
             if (!activeGroupId) return;
             const text = messageInput.value.trim();
@@ -381,6 +422,7 @@
         }
 
         createGroupBtn.addEventListener("click", promptCreateGroup);
+        joinByPasteBtn.addEventListener("click", promptJoinByPaste);
         sendButton.addEventListener("click", sendMessage);
         messageInput.addEventListener("keydown", function (event) {
             if (event.key === "Enter") sendMessage();
@@ -389,12 +431,12 @@
         let bridge = null;
         new QWebChannel(qt.webChannelTransport, function (channel) {
             bridge = channel.objects.bridge;
+            attachWebsocketStatus(bridge);
             bridge.server_event.connect(function (payload) {
                 let evt = null;
                 try { evt = JSON.parse(payload); } catch (e) { evt = null; }
                 if (!evt) return;
                 if (evt.type === "server_event") {
-                    window.dispatchEvent(new CustomEvent("willchat:event", { detail: evt }));
                     return;
                 }
                 if (evt.type === "messages") {
@@ -404,7 +446,6 @@
                     if (gid && data && data.ok) {
                         messagesByGroup[gid] = data.messages || [];
                     } else if (gid) {
-                        messagesByGroup[gid] = [];
                         if (data && data.error) showToast(friendlyError(data, "載入訊息失敗"));
                     }
                     if (activeGroupId === gid) renderMessages();
@@ -413,20 +454,26 @@
                 if (evt.type === "message_sent") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast(friendlyError(data, "傳送失敗"));
+                    if (!(data && data.ok)) {
+                        showToast(friendlyError(data, "傳送失敗"));
+                    }
                     return;
                 }
                 if (evt.type === "group_created") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast(friendlyError(data, "建立群組失敗"));
+                    if (!(data && data.ok)) {
+                        showToast(friendlyError(data, "建立群組失敗"));
+                    }
                     else applyState();
                     return;
                 }
                 if (evt.type === "group_deleted") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast(friendlyError(data, "刪除群組失敗"));
+                    if (!(data && data.ok)) {
+                        showToast(friendlyError(data, "刪除群組失敗"));
+                    }
                     else {
                         const gid = evt.group_id;
                         groups = groups.filter(function (g) { return g.id !== gid; });
@@ -448,14 +495,18 @@
                 if (evt.type === "group_joined") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast(friendlyError(data, "加入群組失敗"));
+                    if (!(data && data.ok)) {
+                        showToast(friendlyError(data, "加入群組失敗"));
+                    }
                     else applyState();
                     return;
                 }
                 if (evt.type === "group_left") {
                     let data = null;
                     try { data = JSON.parse(evt.result); } catch (e) { data = null; }
-                    if (!(data && data.ok)) showToast(friendlyError(data, "退出群組失敗"));
+                    if (!(data && data.ok)) {
+                        showToast(friendlyError(data, "退出群組失敗"));
+                    }
                     else {
                         const gid = evt.group_id;
                         groups = groups.filter(function (g) { return g.id !== gid; });

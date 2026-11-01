@@ -31,12 +31,6 @@ async fn login(
     password: String,
 ) -> Result<Value, String> {
     let email = email.trim().to_string();
-    let (ok, msg, latency) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string(), -1));
-    state.network.write().await.latency = latency;
-    if !ok {
-        state.network.write().await.tries += 1;
-        return Ok(json!({"ok": false, "error": msg}));
-    }
     if !is_gmail(&email) || password.len() < 8 {
         return Ok(json!({"ok": false, "error": "帳號或密碼錯誤"}));
     }
@@ -77,12 +71,6 @@ async fn register(
     if password.len() < 8 {
         return Ok(json!({"ok": false, "error": "密碼過於簡短"}));
     }
-    let (ok, msg, latency) = client::health_check().await.unwrap_or((false, "無法連線後端".to_string(), -1));
-    state.network.write().await.latency = latency;
-    if !ok {
-        state.network.write().await.tries += 1;
-        return Ok(json!({"ok": false, "error": msg}));
-    }
     let client = client::server_url();
     match client::register_request(&client, &username, &email, &password).await {
         Ok((status, data, token)) => {
@@ -111,12 +99,25 @@ async fn get_state(state: State<'_, SharedState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn get_websocket_status(state: State<'_, SharedState>) -> Result<String, String> {
+    let status = state.ws_status.read().await;
+    Ok(if status.is_empty() { "closed".to_string() } else { status.clone() })
+}
+
+#[tauri::command]
 async fn get_messages(state: State<'_, SharedState>, group_id: String) -> Result<Value, String> {
     let client = client::server_url();
     let token = state.token.read().await.clone();
     let path = format!("/api/groups/{group_id}/messages?amount=50");
     match client::request_json(&client, "GET", &path, Some(&token), None).await {
-        Ok((_, body)) => {
+        Ok((status, body)) => {
+            if !client::is_ok_status(status) {
+                return Ok(json!({
+                    "ok": false,
+                    "code": body.get("code"),
+                    "error": body.get("message").and_then(Value::as_str).unwrap_or("載入訊息失敗")
+                }));
+            }
             let messages: Vec<Value> = {
                 let arr = body
                     .get("data")
@@ -311,6 +312,7 @@ pub fn run() {
             login,
             register,
             get_state,
+            get_websocket_status,
             get_messages,
             get_members,
             send_message,

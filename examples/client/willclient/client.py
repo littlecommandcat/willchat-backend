@@ -310,8 +310,11 @@ class Client:
     
         return message
 
-    async def fetch_bulk_message(self, group_id: str, amount: int) -> list[Message]:
-        resp, body = await RequestManager.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{RequestManager.token}"}, params={"amount": amount})
+    async def fetch_bulk_messages(self, group_id: str, amount: int | None) -> list[Message]:
+        if amount <= 0:
+            raise ValueError("Fetch bulk message amount must greater than 0")
+        
+        resp, body = await RequestManager.get(f"/api/groups/{group_id}/messages", headers={"Authorization": f"{RequestManager.token}"}, params={"amount": amount} if amount else None)
         if is_not_allowed_code(resp.status):
             raise_code_error(resp.status, ErrorType.GROUP)
     

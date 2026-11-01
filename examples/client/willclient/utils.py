@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Any
-from typing import TYPE_CHECKING
+from .models.enums import ErrorType
 
 from .exceptions import (
     WillClientException,
@@ -18,27 +18,26 @@ _allowed_status = [200, 201, 202, 204]
 
 
 def _build_error_map():
-    # Imported lazily to avoid a circular import: models -> utils -> models.
-    from .models import enums
+    # No lazy import anymore 
 
     return {
-        enums.ErrorType.GROUP: {
+        ErrorType.GROUP: {
             403: (WillClientForbidden, "Forbidden to fetch group"),
             404: (UnknownGroup, "Unknown group"),
         },
-        enums.ErrorType.MESSAGE: {
+        ErrorType.MESSAGE: {
             403: (WillClientForbidden, "Forbidden to fetch message"),
             404: (UnknownMessage, "Unknown message"),
         },
-        enums.ErrorType.MEMBER: {
+        ErrorType.MEMBER: {
             403: (WillClientForbidden, "Forbidden to fetch member"),
             404: (UnknownMember, "Unknown member"),
         },
-        enums.ErrorType.AUTH: {
+        ErrorType.AUTH: {
             403: (WillClientForbidden, "Forbidden to login"),
             404: (UnknownLogin, "Unknown login"),
         },
-        enums.ErrorType.OTHER: {
+        ErrorType.OTHER: {
             401: (WillClientUnauthorized, "Unauthorized request"),
             403: (WillClientForbidden, "Forbidden to fetch data"),
             404: (WillClientUnknown, "Unknown error type for data"),
@@ -63,11 +62,10 @@ def is_not_allowed_code(code: int) -> bool:
     return bool(code not in _allowed_status)
 
 
-def raise_code_error(code: int, ertype) -> None:
-    from .models import enums
+def raise_code_error(code: int, ertype: ErrorType) -> None:
 
     error_map = _get_error_map()
-    entry = error_map.get(ertype, {}).get(code) or error_map[enums.ErrorType.OTHER].get(code)
+    entry = error_map.get(ertype, {}).get(code) or error_map[ErrorType.OTHER].get(code)
 
     if entry is None:
         error_cls, message = WillClientException, "WillClient internal error"
@@ -80,12 +78,15 @@ class _Missing:
     __slots__ = ()
 
     def __eq__(self, other) -> bool:
-        return False
+        return isinstance(other, _Missing)
 
     def __bool__(self) -> bool:
         return False
 
     def __hash__(self) -> int:
+        return 0
+
+    def __int__(self) -> int:
         return 0
 
     def __repr__(self):

@@ -531,8 +531,8 @@ func (s *ChatService) GetMessages(c *gin.Context) {
 	}
 
 	amount := request.Amount
-	if amount <= 0 || amount > maxGetAmount {
-		writeError(c, http.StatusBadRequest, "invalid_request", "message amount must be between 1 and 50")
+	if amount < 1 || amount > maxGetAmount {
+		writeError(c, http.StatusBadRequest, "invalid_request", "message amount must be greater than 1 or empty")
 		return
 	}
 
@@ -891,10 +891,18 @@ func (s *ChatService) groupAttachmentKeys(groupID string) ([]string, error) {
 
 func (s *ChatService) getMessages(groupID string, amount int) ([]core.Message, error) {
 	groupID = s.snowflake.ToSnowflake(groupID)
-	messageIDs, err := s.redis.LRange(context.Background(), groupMessagesKey(groupID), -int64(amount), -1).Result()
+	var start int64
+	if amount <= 0 {
+		start = 0
+	} else {
+		start = -int64(amount)
+	}
+
+	messageIDs, err := s.redis.LRange(context.Background(), groupMessagesKey(groupID), start, -1).Result()
 	if err != nil {
 		return nil, err
 	}
+
 	messages := make([]core.Message, 0, len(messageIDs))
 	for _, messageID := range messageIDs {
 		value, err := s.redis.Get(context.Background(), messagesKey(messageID)).Result()

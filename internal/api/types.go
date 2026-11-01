@@ -94,12 +94,13 @@ type attachmentRequest struct {
 }
 
 type getMessagesRequest struct {
-	Amount int `form:"amount" binding:"required"`
+	Amount int `form:"amount" binding:"omitempty"`
 }
 
-type getMessageRequest struct {
-	MessageID string `form:"message_id" binding:"required"`
-}
+// Use form get instead using this
+// type getMessageRequest struct {
+// 	MessageID string `form:"message_id" binding:"required"`
+// }
 
 type groupResponse struct {
 	GroupID   string `json:"group_id"`

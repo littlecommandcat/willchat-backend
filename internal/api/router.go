@@ -8,26 +8,26 @@ import (
 	"willchat-backend/internal/middleware"
 
 	"github.com/gin-gonic/gin"
-	"github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var enableProxyChecker = false
 var ipList = make(map[string]int)
 
-func Router(redisClient *redis.Client) (*gin.Engine, error) {
+func Router(db *pgxpool.Pool) (*gin.Engine, error) {
 	r := gin.Default()
 	if enableProxyChecker {
 		log.Print("Enabled proxy checker")
 		r.Use(middleware.ProxyChecker())
 	}
 
-	authService, err := NewService(redisClient, core.NewSnowflake(1))
+	authService, err := NewService(db, core.NewSnowflake(1))
 	if err != nil {
 		return nil, err
 	}
 	hub := core.NewHub()
 	authService.SetHub(hub)
-	chatService := NewChatService(redisClient, authService.snowflake, authService, hub)
+	chatService := NewChatService(db, authService.snowflake, authService, hub)
 
 	limitList := make(map[string]*core.IpLimit)
 

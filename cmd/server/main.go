@@ -40,17 +40,21 @@ func main() {
 	}
 	versionString := string(versionData)
 	log.Printf("app version: %s", versionString)
-	redisClient := data.RedisClient()
-	redisContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	pgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := data.PingRedis(redisContext, redisClient); err != nil {
-		log.Fatalf("redis connection failed addr=%s db=%d: %v", redisClient.Options().Addr, redisClient.Options().DB, err)
-	}
-	log.Printf("redis connected addr=%s db=%d", redisClient.Options().Addr, redisClient.Options().DB)
-
-	router, err := api.Router(redisClient)
+	pool, err := data.NewPostgres(pgCtx)
 	if err != nil {
-		log.Fatalf("redis member loading failed: %v", err)
+		log.Fatalf("postgres connection failed: %v", err)
+	}
+	defer pool.Close()
+	if err := data.Migrate(pgCtx, pool); err != nil {
+		log.Fatalf("postgres migrate failed: %v", err)
+	}
+	log.Printf("postgres connected")
+
+	router, err := api.Router(pool)
+	if err != nil {
+		log.Fatalf("router setup failed: %v", err)
 	}
 	if err := router.Run(":" + adr); err != nil {
 		log.Fatal(err)

@@ -52,20 +52,6 @@ type memberProfile struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
-type tokenRecord struct {
-	MemberID string `json:"member_id"`
-}
-
-type redisMemberRecord struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	Email        string            `json:"email"`
-	PasswordHash string            `json:"password_hash"`
-	Token        string            `json:"token"`
-	Block        []string          `json:"block"`
-	Read         map[string]string `json:"read"`
-}
-
 // Chat requests and records
 // Maybe it failed to get data (idk)
 type groupRecord struct {

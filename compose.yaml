@@ -6,22 +6,27 @@ services:
     environment:
       PORT: "8080"
       GIN_MODE: release
-      # "redis:6379" encoded with XOR key <key>, as required by RedisClient.
-      REDIS_ADDR: ""
-      REDIS_PASSWORD: ""
-      REDIS_DB: "0"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: willchat
+      POSTGRES_PASSWORD: willchat
+      POSTGRES_DB: willchat
+      POSTGRES_SSLMODE: disable
     depends_on:
-      redis:
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
-  redis:
-    image: redis:7.4-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: willchat
+      POSTGRES_PASSWORD: willchat
+      POSTGRES_DB: willchat
     volumes:
-      - redis-data:/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "pg_isready -U willchat -d willchat"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -29,4 +34,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  redis-data:
+  postgres-data:

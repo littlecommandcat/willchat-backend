@@ -125,6 +125,16 @@ body {
   background: #333;
 }
 
+.account-settings { margin-top: auto; padding: 12px; border-top: 1px solid #000; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.account-settings span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.settings-panel { width: 360px; max-width: calc(100vw - 32px); padding: 24px; background: #fff; border: 1px solid #000; border-radius: 8px; display: flex; flex-direction: column; gap: 12px; }
+.settings-panel label { display: flex; flex-direction: column; gap: 5px; }
+.settings-panel input { padding: 9px; border: 1px solid #aaa; border-radius: 4px; }
+.settings-panel button { padding: 9px; background: #000; color: #fff; border: 0; border-radius: 4px; cursor: pointer; }
+.settings-panel button:disabled { background: #888; }
+.settings-panel .settings-cancel { background: #fff; color: #000; border: 1px solid #000; }
+
 .sidebar-actions {
   display: flex;
   gap: 6px;

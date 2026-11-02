@@ -34,8 +34,15 @@ export interface ApiResult {
   [key: string]: unknown;
 }
 
+export function invokeError(error: unknown, fallback: string): ApiResult {
+  const message = error instanceof Error ? error.message : String(error || "");
+  return { ok: false, error: message || fallback };
+}
+
 export const api = {
   getWebsocketStatus: () => invoke<string>("get_websocket_status"),
+  updateProfile: (name: string, email: string) => invoke<ApiResult>("update_profile", { name, email }),
+  resetPassword: (password: string) => invoke<ApiResult>("reset_password", { password }),
   health: () => invoke<ApiResult>("health"),
   login: (email: string, password: string) =>
     invoke<ApiResult>("login", { email, password }),

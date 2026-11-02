@@ -84,7 +84,7 @@ class Bridge(QObject):
         except Exception:
             logger.exception("[bridge] health check failed")
             return False, "無法連線後端"
-        
+
     @pyqtSlot(result=str)
     def health(self) -> str:
         fut = self.submit(self._check_health())
@@ -359,6 +359,63 @@ class Bridge(QObject):
     @pyqtSlot(result=str)
     def get_websocket_status(self) -> str:
         return self._ws_status
+
+    @pyqtSlot(str, str, result=str)
+    def update_profile(self, name: str, email: str) -> str:
+        if len(name.strip()) < 3:
+            return json.dumps({"ok": False, "error": "使用者名稱須超過3字元"}, ensure_ascii=False)
+
+        if email.strip() and not email.strip().endswith("@gmail.com"):
+            return json.dumps({"ok": False, "error": "限用Gmail進行變更"}, ensure_ascii=False)
+
+        return self._request_async("profile_updated", self._async_update_profile(name.strip(), email.strip()))
+
+    async def _async_update_profile(self, name: str, email: str) -> str:
+        try:
+            profile = {"name": name}
+            if email:
+                profile["email"] = email
+            resp, body = await RequestManager.put("/api/me", headers={"Authorization": RequestManager.token}, json=profile)
+            if resp.status not in (200, 201):
+                return json.dumps({"ok": False, "code": (body or {}).get("code", ""), "error": (body or {}).get("message", "更新個人資料失敗")}, ensure_ascii=False)
+            member = (body.get("data") or {}).get("member") or {}
+            self._current_user.update({"id": member.get("id", self._current_user["id"]), "name": member.get("name", name)})
+            email_changed = bool((body.get("data") or {}).get("email_changed", False))
+            if email_changed:
+                await self.client.close()
+                _cache_base.token = ""
+                self._token = ""
+                self._current_user = {"id": "", "name": ""}
+                self._groups.clear()
+                self._messages.clear()
+                self._emit("websocket_status", {"status": "red"})
+                self._emit("auth_required", {})
+            return json.dumps({"ok": True, "email_changed": email_changed, "member": self._current_user}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+    @pyqtSlot(str, result=str)
+    def reset_password(self, password: str) -> str:
+        if len(password) < 8:
+            return json.dumps({"ok": False, "error": "密碼必須超過8字元"}, ensure_ascii=False)
+        return self._request_async("password_reset", self._async_reset_password(password))
+
+    async def _async_reset_password(self, password: str) -> str:
+        try:
+            resp, body = await RequestManager.post("/auth/reset", headers={"Authorization": RequestManager.token}, json={"password": password})
+            if resp.status not in (200, 201, 202, 204):
+                return json.dumps({"ok": False, "code": (body or {}).get("code", ""), "error": (body or {}).get("message", "重設密碼失敗")}, ensure_ascii=False)
+            await self.client.close()
+            _cache_base.token = ""
+            self._token = ""
+            self._current_user = {"id": "", "name": ""}
+            self._groups.clear()
+            self._messages.clear()
+            self._emit("websocket_status", {"status": "red"})
+            self._emit("auth_required", {})
+            return json.dumps({"ok": True}, ensure_ascii=False)
+        except Exception as exc:
+            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
     @pyqtSlot(result=str)
     def get_state(self) -> str:

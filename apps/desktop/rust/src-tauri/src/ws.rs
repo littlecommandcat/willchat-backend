@@ -24,27 +24,33 @@ pub async fn start_ws(state: &SharedState, app: &AppHandle) {
         *busy = false;
         return;
     }
+    let owner = state.clone();
     let state = state.clone();
     let app = app.clone();
-    tauri::async_runtime::spawn(async move {
+    let task = tokio::spawn(async move {
         let ws_base = config::get().ws_url.clone();
         loop {
+            if state.token.read().await.is_empty() {
+                break;
+            }
             let full_url = format!("{ws_base}/ws?token={token}");
             set_status(&state, &app, "reconnecting").await;
-            let stream = match tokio_tungstenite::connect_async(&full_url).await {
-                Ok((stream, _)) => stream,
-                Err(_) => {
+            let stream = match tokio::time::timeout(Duration::from_secs(30), tokio_tungstenite::connect_async(&full_url)).await {
+                Ok(Ok((stream, _))) => stream,
+                _ => {
                     set_status(&state, &app, "reconnecting").await;
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     continue;
                 }
             };
             let (mut write, mut read) = stream.split();
-            while let Some(Ok(msg)) = read.next().await {
+            while let Ok(Some(Ok(msg))) = tokio::time::timeout(Duration::from_secs(45), read.next()).await {
                 if let Message::Ping(payload) = msg {
-                    if write.send(Message::Pong(payload)).await.is_err() {
+                    if !matches!(tokio::time::timeout(Duration::from_secs(10), write.send(Message::Pong(payload))).await, Ok(Ok(()))) {
                         break;
                     }
+                } else if let Message::Close(_) = msg {
+                    break;
                 } else if let Message::Text(text) = msg {
                     let event: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
                     if event.is_object() {
@@ -55,5 +61,17 @@ pub async fn start_ws(state: &SharedState, app: &AppHandle) {
             set_status(&state, &app, "reconnecting").await;
             tokio::time::sleep(Duration::from_secs(3)).await;
         }
+        *state.ws_busy.lock().await = false;
+        set_status(&state, &app, "closed").await;
     });
+    *owner.ws_task.lock().await = Some(task);
+}
+
+pub async fn stop_ws(state: &SharedState, app: &AppHandle) {
+    if let Some(task) = state.ws_task.lock().await.take() {
+        task.abort();
+        let _ = task.await;
+    }
+    *state.ws_busy.lock().await = false;
+    set_status(state, app, "closed").await;
 }

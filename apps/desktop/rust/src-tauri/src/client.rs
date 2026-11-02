@@ -168,3 +168,13 @@ pub async fn register_request(
     let token = data.get("token").and_then(|v| v.as_str()).unwrap_or("").to_string();
     Ok((status, data, token))
 }
+
+pub async fn update_profile(client: &reqwest::Client, token: &str, name: &str, email: &str) -> Result<(u16, Value), String> {
+    let mut profile = json!({"name": name});
+    if !email.is_empty() { profile["email"] = json!(email); }
+    request_json(client, "PUT", "/api/me", Some(token), Some(profile)).await
+}
+
+pub async fn reset_password(client: &reqwest::Client, token: &str, password: &str) -> Result<(u16, Value), String> {
+    request_json(client, "POST", "/auth/reset", Some(token), Some(json!({"password": password}))).await
+}

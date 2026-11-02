@@ -111,7 +111,9 @@ class Client:
                         self.websocket_url(token),
                         origin=BASE_URL,
                         open_timeout=30,
-                        ping_interval=None
+                        ping_interval=20,
+                        ping_timeout=10,
+                        close_timeout=5,
                     ) as socket:
                         self._socket = socket
 
@@ -189,6 +191,7 @@ class Client:
                     self._member = None
 
                 if self._running:
+                    self.event_handler.dispatch(EventType.DISCONNECT, "即時連線中斷，正在重新連線")
                     await asyncio.sleep(3)
 
         finally:

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use regex::Regex;
 
 mod client;
@@ -102,6 +102,53 @@ async fn get_state(state: State<'_, SharedState>) -> Result<Value, String> {
 async fn get_websocket_status(state: State<'_, SharedState>) -> Result<String, String> {
     let status = state.ws_status.read().await;
     Ok(if status.is_empty() { "closed".to_string() } else { status.clone() })
+}
+
+#[tauri::command]
+async fn update_profile(state: State<'_, SharedState>, app: AppHandle, name: String, email: String) -> Result<Value, String> {
+    let client = client::server_url();
+    let token = state.token.read().await.clone();
+    match client::update_profile(&client, &token, name.trim(), email.trim()).await {
+        Ok((status, body)) if client::is_ok_status(status) => {
+            let fallback_id = state.current_user.read().await.id.clone();
+            let member = body.get("data").and_then(|d| d.get("member")).cloned().unwrap_or_else(|| json!({"id": fallback_id, "name": name.trim()}));
+            let current = client::parse_member(&member);
+            *state.current_user.write().await = current.clone();
+            let email_changed = body.get("data").and_then(|data| data.get("email_changed")).and_then(Value::as_bool).unwrap_or(false);
+            if email_changed {
+                ws::stop_ws(&state, &app).await;
+                *state.token.write().await = String::new();
+                *state.current_user.write().await = models::MemberInfo::default();
+                state.groups.write().await.clear();
+                state.messages.write().await.clear();
+                ws::set_status(&state, &app, "closed").await;
+                let _ = app.emit("willchat:event", serde_json::json!({"type": "auth_required"}));
+            }
+            Ok(json!({"ok": true, "email_changed": email_changed, "member": {"id": current.id, "name": current.name}}))
+        }
+        Ok((_, body)) => Ok(json!({"ok": false, "code": body.get("code"), "error": body.get("message").and_then(Value::as_str).unwrap_or("更新個人資料失敗")})),
+        Err(error) => Ok(json!({"ok": false, "error": error})),
+    }
+}
+
+#[tauri::command]
+async fn reset_password(state: State<'_, SharedState>, app: AppHandle, password: String) -> Result<Value, String> {
+    let client = client::server_url();
+    let token = state.token.read().await.clone();
+    match client::reset_password(&client, &token, &password).await {
+        Ok((status, _)) if client::is_ok_status(status) => {
+            ws::stop_ws(&state, &app).await;
+            *state.token.write().await = String::new();
+            *state.current_user.write().await = models::MemberInfo::default();
+            state.groups.write().await.clear();
+            state.messages.write().await.clear();
+            ws::set_status(&state, &app, "closed").await;
+            let _ = app.emit("willchat:event", serde_json::json!({"type": "auth_required"}));
+            Ok(json!({"ok": true}))
+        }
+        Ok((_, body)) => Ok(json!({"ok": false, "code": body.get("code"), "error": body.get("message").and_then(Value::as_str).unwrap_or("重設密碼失敗")})),
+        Err(error) => Ok(json!({"ok": false, "error": error})),
+    }
 }
 
 #[tauri::command]
@@ -313,6 +360,8 @@ pub fn run() {
             register,
             get_state,
             get_websocket_status,
+            update_profile,
+            reset_password,
             get_messages,
             get_members,
             send_message,

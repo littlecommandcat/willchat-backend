@@ -33,13 +33,20 @@ function formatTime(ts: number): string {
   return `${hh}:${mm}`;
 }
 
-export default function Chat() {
+export default function Chat({ onLogout }: { onLogout: () => void }) {
   const [currentUser, setCurrentUser] = useState<Member>({ id: "", name: "" });
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [messagesByGroup, setMessagesByGroup] = useState<Record<string, Message[]>>({});
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeGroupRef = useRef<string | null>(null);
   activeGroupRef.current = activeGroupId;
@@ -56,14 +63,19 @@ export default function Chat() {
   );
 
   const applyState = useCallback(async () => {
-    const data = await api.getState();
+    let data;
+    try { data = await api.getState(); }
+    catch { showToast("無法載入帳號資料"); return; }
     setCurrentUser(data.member || { id: "", name: "" });
     setGroups(data.groups || []);
   }, []);
 
   const loadMessages = useCallback(
     async (groupId: string) => {
-      const result = await api.getMessages(groupId);
+      if (!groupId.trim()) return;
+      let result;
+      try { result = await api.getMessages(groupId); }
+      catch { showToast("無法載入訊息"); return; }
       if (result.ok && result.messages) {
         setMessagesByGroup((prev) => ({ ...prev, [groupId]: result.messages! }));
       } else {
@@ -183,11 +195,14 @@ export default function Chat() {
         }
         case "error":
           break;
+        case "auth_required":
+          onLogout();
+          break;
         default:
           break;
       }
     },
-    [applyState, loadMessages]
+    [applyState, loadMessages, onLogout]
   );
 
   useEffect(() => {
@@ -210,9 +225,15 @@ export default function Chat() {
   }, [handleServerEvent]);
 
   const createGroup = async () => {
+    if (actionBusy) return;
     const name = window.prompt("請輸入群組名稱：", "");
     if (name === null) return;
-    const result = await api.createGroup(name.trim());
+    if (name.trim().length < 1 || name.trim().length > 50) { showToast("群組名稱長度需為 1～50 字元"); return; }
+    setActionBusy(true);
+    let result;
+    try { result = await api.createGroup(name.trim()); }
+    catch { setActionBusy(false); showToast("建立群組失敗"); return; }
+    setActionBusy(false);
     if (!result.ok) {
       showToast(friendlyError(result as { error?: string; code?: string }, "建立群組失敗"));
     } else {
@@ -221,7 +242,12 @@ export default function Chat() {
   };
 
   const joinGroup = async (groupId: string) => {
-    const result = await api.joinGroup(groupId);
+    if (actionBusy || !groupId.trim()) return;
+    setActionBusy(true);
+    let result;
+    try { result = await api.joinGroup(groupId.trim()); }
+    catch { setActionBusy(false); showToast("加入群組失敗"); return; }
+    setActionBusy(false);
     if (!result.ok) {
       showToast(friendlyError(result as { error?: string; code?: string }, "加入群組失敗"));
     } else {
@@ -269,7 +295,12 @@ export default function Chat() {
 
 
   const leaveGroup = async (groupId: string) => {
-    const result = await api.leaveGroup(groupId);
+    if (actionBusy || !groupId.trim() || !window.confirm("確定要退出此群組？")) return;
+    setActionBusy(true);
+    let result;
+    try { result = await api.leaveGroup(groupId.trim()); }
+    catch { setActionBusy(false); showToast("退出群組失敗"); return; }
+    setActionBusy(false);
     if (!result.ok) {
       showToast(friendlyError(result as { error?: string; code?: string }, "退出群組失敗"));
     } else {
@@ -284,8 +315,12 @@ export default function Chat() {
   };
 
   const deleteGroup = async (groupId: string) => {
-    if (!window.confirm("確定要刪除此群組？")) return;
-    const result = await api.deleteGroup(groupId);
+    if (actionBusy || !groupId.trim() || !window.confirm("確定要刪除此群組？")) return;
+    setActionBusy(true);
+    let result;
+    try { result = await api.deleteGroup(groupId.trim()); }
+    catch { setActionBusy(false); showToast("刪除群組失敗"); return; }
+    setActionBusy(false);
     if (!result.ok) {
       showToast(friendlyError(result as { error?: string; code?: string }, "刪除群組失敗"));
     } else {
@@ -300,9 +335,11 @@ export default function Chat() {
   };
 
   const sendMessage = async () => {
-    if (!activeGroupId) return;
+    if (actionBusy || !activeGroupId) return;
     const text = draft.trim();
     if (!text) return;
+    if (text.length > 2000) { showToast("訊息不可超過 2000 字元"); return; }
+    setActionBusy(true);
     setDraft("");
     const pendingId = `__pending__${Date.now()}`;
     const pendingMsg: Message = {
@@ -318,7 +355,10 @@ export default function Chat() {
       ...prev,
       [activeGroupId]: [...(prev[activeGroupId] || []), pendingMsg],
     }));
-    const result = await api.sendMessage(activeGroupId, text);
+    let result;
+    try { result = await api.sendMessage(activeGroupId, text); }
+    catch { setActionBusy(false); showToast("傳送訊息失敗"); return; }
+    setActionBusy(false);
     if (!result.ok) {
       setMessagesByGroup((prev) => ({
         ...prev,
@@ -326,6 +366,37 @@ export default function Chat() {
       }));
       showToast(friendlyError(result as { error?: string; code?: string }, "傳送失敗"));
     }
+  };
+
+  const openSettings = () => {
+    setProfileName(currentUser.name);
+    setProfileEmail("");
+    setSettingsOpen(true);
+  };
+  const saveProfile = async () => {
+    if (settingsBusy) return;
+    if (profileName.trim().length < 3 || profileName.trim().length > 50) { showToast("使用者名稱需為 3～50 字元"); return; }
+    if (profileEmail.trim() && !/^[a-zA-Z0-9._%+-]+(\+[a-zA-Z0-9._%+-]+)?@gmail\.com$/.test(profileEmail.trim())) { showToast("限用 Gmail 進行變更"); return; }
+    setSettingsBusy(true);
+    let result;
+    try { result = await api.updateProfile(profileName.trim(), profileEmail.trim()); }
+    catch { setSettingsBusy(false); showToast("更新個人資料失敗"); return; }
+    setSettingsBusy(false);
+    if (!result.ok) showToast(friendlyError(result, "更新個人資料失敗"));
+    else if (result.email_changed) onLogout();
+    else { setCurrentUser((u) => ({ ...u, name: profileName.trim() })); showToast("個人資料已更新"); }
+  };
+  const resetPassword = async () => {
+    if (settingsBusy) return;
+    if (newPassword.length < 8) { showToast("新密碼至少需要 8 個字元"); return; }
+    if (newPassword !== confirmPassword) { showToast("兩次密碼不一致"); return; }
+    setSettingsBusy(true);
+    let result;
+    try { result = await api.resetPassword(newPassword); }
+    catch { setSettingsBusy(false); showToast("重設密碼失敗"); return; }
+    setSettingsBusy(false);
+    if (!result.ok) showToast(friendlyError(result, "重設密碼失敗"));
+    else onLogout();
   };
 
   const activeGroup = findGroup(activeGroupId);
@@ -375,6 +446,10 @@ export default function Chat() {
             );
           })}
         </ul>
+        <div className="account-settings">
+          <span>{currentUser.name || "帳號"}</span>
+          <button className="sidebar-action" title="帳號設定" onClick={openSettings}>⚙</button>
+        </div>
       </aside>
       <main className="chat">
         <div className="chat-header">
@@ -433,6 +508,19 @@ export default function Chat() {
           </button>
         </div>
       </main>
+      {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}>
+        <section className="settings-panel" onClick={(e) => e.stopPropagation()}>
+          <h2>帳號設定</h2>
+          <label>名稱<input value={profileName} onChange={(e) => setProfileName(e.target.value)} /></label>
+          <label>Email<input type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder="留空代表不變更" /></label>
+          <button disabled={settingsBusy} onClick={saveProfile}>儲存個人資料</button>
+          <hr />
+          <label>新密碼<input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} /></label>
+          <label>確認新密碼<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} /></label>
+          <button disabled={settingsBusy} onClick={resetPassword}>重設密碼並返回登入</button>
+          <button className="settings-cancel" onClick={() => setSettingsOpen(false)}>取消</button>
+        </section>
+      </div>}
       <aside className="members-panel">
         <div className="members-header">成員</div>
         <ul className="member-list">

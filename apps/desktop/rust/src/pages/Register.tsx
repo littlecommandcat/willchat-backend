@@ -32,9 +32,20 @@ export default function Register({ onDone }: Props) {
       setMessage("密碼過於簡短，請至少多於8字元");
       return;
     }
+    if (!username.trim() || !email.trim() || !password) {
+      setMessage("請完整填寫註冊資料");
+      return;
+    }
     setBusy(true);
     setMessage("正在註冊...");
-    const result = await api.register(username.trim(), email.trim(), password);
+    let result;
+    try {
+      result = await api.register(username.trim(), email.trim(), password);
+    } catch {
+      setBusy(false);
+      setMessage("無法連接伺服器");
+      return;
+    }
     setBusy(false);
     if (result.ok) {
       setMessage("註冊成功");

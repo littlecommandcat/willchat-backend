@@ -32,7 +32,7 @@ function App() {
   }
 
   if (page === "chat") {
-    return <><StatusIcon /><Chat /></>;
+    return <><StatusIcon /><Chat onLogout={() => setPage("login")} /></>;
   }
 
   return (

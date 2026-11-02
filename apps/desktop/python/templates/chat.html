@@ -42,6 +42,14 @@
         .member-avatar { width: 30px; height: 30px; border-radius: 50%; background: #000; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
         .sidebar-action { background: #000; color: #fff; border: 1px solid #000; border-radius: 4px; width: 26px; height: 26px; font-size: 16px; line-height: 1; cursor: pointer; }
         .sidebar-action:hover { background: #333; }
+        .account-settings { padding: 12px; border-top: 1px solid #000; }
+        .account-settings button { padding: 8px; width: 100%; cursor: pointer; }
+        .settings-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 1002; }
+        .settings-backdrop[hidden] { display: none; }
+        .settings-panel { width: 360px; max-width: calc(100vw - 32px); padding: 24px; background: #fff; border: 1px solid #000; border-radius: 8px; display: flex; flex-direction: column; gap: 12px; }
+        .settings-panel label { display: flex; flex-direction: column; gap: 5px; }
+        .settings-panel input, .settings-panel button { padding: 9px; border: 1px solid #aaa; border-radius: 4px; }
+        .settings-panel button { cursor: pointer; }
         .group-actions { display: flex; gap: 6px; margin-top: 6px; }
         .group-actions button { font-size: 11px; padding: 3px 8px; background: #fff; color: #000; border: 1px solid #aaa; border-radius: 3px; cursor: pointer; }
         .group-actions button:hover { background: #eee; }
@@ -68,6 +76,7 @@
                 </div>
             </div>
             <ul class="group-list" id="groupList"></ul>
+            <div class="account-settings"><button id="settingsButton">⚙ 帳號設定</button></div>
         </aside>
         <main class="chat">
             <div class="chat-header" id="chatHeader">請選擇群組</div>
@@ -88,6 +97,46 @@
     <script src="status.js"></script>
     <script>
         const currentUser = { id: "", name: "" };
+        const settings = document.createElement("div");
+        settings.className = "settings-backdrop";
+        settings.hidden = true;
+        settings.innerHTML = '<section class="settings-panel" role="dialog" aria-modal="true" aria-label="帳號設定">' +
+            '<h2>帳號設定</h2><form id="profileForm"><label>名稱<input id="profileName" required minlength="3" maxlength="50"></label>' +
+            '<label>Email<input id="profileEmail" type="email" placeholder="留空代表不變更"></label><button>儲存個人資料</button></form><hr>' +
+            '<form id="passwordForm"><label>新密碼<input id="newPassword" type="password" autocomplete="new-password" required minlength="8"></label>' +
+            '<label>確認新密碼<input id="confirmPassword" type="password" autocomplete="new-password" required minlength="8"></label>' +
+            '<button>重設密碼並返回登入</button></form><button id="closeSettings">關閉</button><p id="settingsError" role="alert"></p></section>';
+        document.body.appendChild(settings);
+        let settingsBusy = false;
+        function setSettingsBusy(busy) {
+            settingsBusy = busy;
+            settings.querySelectorAll("button").forEach(function (button) { button.disabled = busy; });
+        }
+        function closeSettings() { if (!settingsBusy) { settings.hidden = true; document.getElementById("passwordForm").reset(); } }
+        document.getElementById("closeSettings").onclick = closeSettings;
+        settings.onclick = function (e) { if (e.target === settings) closeSettings(); };
+        document.getElementById("settingsButton").onclick = function () {
+            document.getElementById("profileName").value = currentUser.name;
+            document.getElementById("profileEmail").value = "";
+            document.getElementById("settingsError").textContent = "";
+            settings.hidden = false;
+        };
+        document.getElementById("profileForm").onsubmit = function (e) {
+            e.preventDefault(); if (settingsBusy || !bridge) return;
+            const name = document.getElementById("profileName").value.trim();
+            const email = document.getElementById("profileEmail").value.trim();
+            if (name.length < 3 || name.length > 50) { document.getElementById("settingsError").textContent = "使用者名稱須為 3～50 字元"; return; }
+            if (email && !/^[a-zA-Z0-9._%+-]+(\+[a-zA-Z0-9._%+-]+)?@gmail\.com$/.test(email)) { document.getElementById("settingsError").textContent = "限用 Gmail 進行變更"; return; }
+            setSettingsBusy(true);
+            bridge.update_profile(name, email);
+        };
+        document.getElementById("passwordForm").onsubmit = function (e) {
+            e.preventDefault(); if (settingsBusy || !bridge) return;
+            const password = document.getElementById("newPassword").value;
+            if (password.length < 8) { document.getElementById("settingsError").textContent = "密碼至少需要 8 個字元"; return; }
+            if (password !== document.getElementById("confirmPassword").value) { document.getElementById("settingsError").textContent = "兩次密碼不一致"; return; }
+            setSettingsBusy(true); bridge.reset_password(password);
+        };
         let groups = [];
         let activeGroupId = null;
         const messagesByGroup = {};
@@ -436,6 +485,18 @@
                 let evt = null;
                 try { evt = JSON.parse(payload); } catch (e) { evt = null; }
                 if (!evt) return;
+                if (evt.type === "profile_updated" || evt.type === "password_reset") {
+                    setSettingsBusy(false);
+                    let result = null; try { result = JSON.parse(evt.result); } catch (e) {}
+                    if (!result || !result.ok) document.getElementById("settingsError").textContent = friendlyError(result, "操作失敗");
+                    else if (evt.type === "profile_updated" && !result.email_changed) {
+                        currentUser.name = result.member.name;
+                        applyState(); showToast("個人資料已更新");
+                    } else if (evt.type === "profile_updated") { window.location.href = "index.html"; }
+                    else { window.location.href = "index.html"; }
+                    return;
+                }
+                if (evt.type === "auth_required") { window.location.href = "index.html"; return; }
                 if (evt.type === "server_event") {
                     return;
                 }

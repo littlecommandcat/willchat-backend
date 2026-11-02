@@ -25,7 +25,7 @@ type registerRequest struct {
 
 type updateProfileRequest struct {
 	Name  *string `json:"name"`
-	Email *string `json:"email" binding:"omitempty,email"`
+	Email *string `json:"email"`
 }
 
 type resetPasswordRequest struct {

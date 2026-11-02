@@ -35,7 +35,14 @@ export default function Login({ onLogin, onNavigateRegister }: Props) {
     }
     setBusy(true);
     setMessage("正在登入...");
-    const result = await api.login(email.trim(), password);
+    let result;
+    try {
+      result = await api.login(email.trim(), password);
+    } catch {
+      setBusy(false);
+      setMessage("無法連接伺服器");
+      return;
+    }
     setBusy(false);
     if (result.ok) {
       setMessage("登入成功");

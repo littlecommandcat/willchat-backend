@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,6 +92,10 @@ func (s *Service) Register(c *gin.Context) {
 	defer tx.Rollback(context.Background())
 
 	if err := s.storeMember(tx, member); err != nil {
+		if isDuplicateEmailError(err) {
+			writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+			return
+		}
 		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
@@ -239,29 +244,45 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		member.Name = username
 	}
 
+	oldEmail := normalizeEmail(member.Email)
 	newEmail := member.Email
 	if request.Email != nil {
 		newEmail = normalizeEmail(*request.Email)
-		if core.SafeCompare(newEmail, "") {
-			writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
-			return
-		}
-		exists, err := s.memberExistsByEmail(newEmail)
-		if err != nil {
-			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
-			return
-		}
-		if exists {
-			existing, err := s.memberByEmail(newEmail)
-			if err == nil && existing.Id != member.Id {
-				writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+		if newEmail != "" {
+			if err := binding.Validator.ValidateStruct(struct {
+				Email string `binding:"required,email"`
+			}{Email: newEmail}); err != nil {
+				writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
 				return
 			}
 		}
-		member.Email = newEmail
+		if core.SafeCompare(newEmail, "") {
+			newEmail = member.Email
+		}
+		if normalizeEmail(newEmail) == oldEmail {
+			member.Email = newEmail
+		} else {
+			exists, err := s.memberExistsByEmail(newEmail)
+			if err != nil {
+				writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+				return
+			}
+			if exists {
+				existing, err := s.memberByEmail(newEmail)
+				if err == nil && existing.Id != member.Id {
+					writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+					return
+				}
+			}
+			member.Email = newEmail
+		}
 	}
 
 	if err := s.storeMember(s.db, member); err != nil {
+		if isDuplicateEmailError(err) {
+			writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
+			return
+		}
 		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
@@ -278,10 +299,10 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 	}
 
 	s.hub.BroadcastAll(core.WSEvent{
-		Event: core.WSEventEnum.ProfileUpdate,
+		Event:   core.WSEventEnum.ProfileUpdate,
 		Payload: gin.H{"member": memberWSResponse},
 	})
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember, "email_changed": normalizeEmail(member.Email) != oldEmail}})
 }
 
 func (s *Service) ResetPassword(c *gin.Context) {
@@ -349,9 +370,10 @@ func (s *Service) ResetPassword(c *gin.Context) {
 		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
 	}
-	member.PasswordHash = string(hash)
-	member.Token = newToken
-	if err := s.storeMember(s.db, member); err != nil {
+	_, err = s.db.Exec(context.Background(),
+		`UPDATE members SET password_hash = $1, token = $2 WHERE id = $3`,
+		string(hash), newToken, s.snowflake.ToSnowflake(member.Id))
+	if err != nil {
 		s.deleteToken(newToken)
 		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 		return
@@ -444,6 +466,7 @@ func (s *Service) deleteToken(token string) {
 }
 
 func (s *Service) storeMember(q queryExecer, member core.MemberData) error {
+	member.Id = s.snowflake.ToSnowflake(member.Id)
 	_, err := q.Exec(context.Background(), `
 		INSERT INTO members (id, name, email, password_hash, token, block, read, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -526,6 +549,10 @@ func writeError(c *gin.Context, status int, code, message string) {
 	c.JSON(status, core.Response{Status: "error", Code: code, Message: message})
 }
 
+func isDuplicateEmailError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "members_email_key"
+}
 
 func jsonMarshal(v any) any {
 	data, err := json.Marshal(v)
@@ -598,5 +625,3 @@ func (s *Service) validateToken(token string) (string, bool) {
 	}
 	return s.snowflake.ToMemberID(memberID), true
 }
-
-

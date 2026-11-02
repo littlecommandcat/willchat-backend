@@ -32,6 +32,8 @@ class _Requester:
     async def _request(self, method: str, path: str, session: aiohttp.ClientSession, **kwargs) -> tuple[aiohttp.ClientResponse, Any]:
         response = await session.request(method, f"{BASE_URL}{path}", timeout=REQUEST_TIMEOUT_SECONDS, **kwargs)
         text = await response.text()
+        if response.status == 204 or not text.strip():
+            return response, {}
         body = None
         try:
             body = json.loads(text)

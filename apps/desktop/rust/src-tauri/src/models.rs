@@ -35,6 +35,7 @@ pub struct AppState {
     pub groups: RwLock<HashMap<String, GroupEntry>>,
     pub messages: RwLock<HashMap<String, Vec<Value>>>,
     pub ws_busy: Mutex<bool>,
+    pub ws_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     pub network: RwLock<Network>,
 }
 

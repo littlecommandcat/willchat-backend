@@ -41,7 +41,7 @@ export function invokeError(error: unknown, fallback: string): ApiResult {
 
 export const api = {
   getWebsocketStatus: () => invoke<string>("get_websocket_status"),
-  updateProfile: (name: string, email: string) => invoke<ApiResult>("update_profile", { name, email }),
+  updateProfile: (name: string) => invoke<ApiResult>("update_profile", { name }),
   resetPassword: (password: string) => invoke<ApiResult>("reset_password", { password }),
   health: () => invoke<ApiResult>("health"),
   login: (email: string, password: string) =>

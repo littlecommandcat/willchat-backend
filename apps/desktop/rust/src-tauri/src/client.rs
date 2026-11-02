@@ -169,9 +169,8 @@ pub async fn register_request(
     Ok((status, data, token))
 }
 
-pub async fn update_profile(client: &reqwest::Client, token: &str, name: &str, email: &str) -> Result<(u16, Value), String> {
-    let mut profile = json!({"name": name});
-    if !email.is_empty() { profile["email"] = json!(email); }
+pub async fn update_profile(client: &reqwest::Client, token: &str, name: &str) -> Result<(u16, Value), String> {
+    let profile = json!({"name": name});
     request_json(client, "PUT", "/api/me", Some(token), Some(profile)).await
 }
 

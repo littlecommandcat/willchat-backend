@@ -105,26 +105,16 @@ async fn get_websocket_status(state: State<'_, SharedState>) -> Result<String, S
 }
 
 #[tauri::command]
-async fn update_profile(state: State<'_, SharedState>, app: AppHandle, name: String, email: String) -> Result<Value, String> {
+async fn update_profile(state: State<'_, SharedState>, name: String) -> Result<Value, String> {
     let client = client::server_url();
     let token = state.token.read().await.clone();
-    match client::update_profile(&client, &token, name.trim(), email.trim()).await {
+    match client::update_profile(&client, &token, name.trim()).await {
         Ok((status, body)) if client::is_ok_status(status) => {
             let fallback_id = state.current_user.read().await.id.clone();
             let member = body.get("data").and_then(|d| d.get("member")).cloned().unwrap_or_else(|| json!({"id": fallback_id, "name": name.trim()}));
             let current = client::parse_member(&member);
             *state.current_user.write().await = current.clone();
-            let email_changed = body.get("data").and_then(|data| data.get("email_changed")).and_then(Value::as_bool).unwrap_or(false);
-            if email_changed {
-                ws::stop_ws(&state, &app).await;
-                *state.token.write().await = String::new();
-                *state.current_user.write().await = models::MemberInfo::default();
-                state.groups.write().await.clear();
-                state.messages.write().await.clear();
-                ws::set_status(&state, &app, "closed").await;
-                let _ = app.emit("willchat:event", serde_json::json!({"type": "auth_required"}));
-            }
-            Ok(json!({"ok": true, "email_changed": email_changed, "member": {"id": current.id, "name": current.name}}))
+            Ok(json!({"ok": true, "member": {"id": current.id, "name": current.name}}))
         }
         Ok((_, body)) => Ok(json!({"ok": false, "code": body.get("code"), "error": body.get("message").and_then(Value::as_str).unwrap_or("更新個人資料失敗")})),
         Err(error) => Ok(json!({"ok": false, "error": error})),

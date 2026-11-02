@@ -42,7 +42,6 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
   const [draft, setDraft] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileName, setProfileName] = useState("");
-  const [profileEmail, setProfileEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [settingsBusy, setSettingsBusy] = useState(false);
@@ -370,20 +369,17 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
 
   const openSettings = () => {
     setProfileName(currentUser.name);
-    setProfileEmail("");
     setSettingsOpen(true);
   };
   const saveProfile = async () => {
     if (settingsBusy) return;
     if (profileName.trim().length < 3 || profileName.trim().length > 50) { showToast("使用者名稱需為 3～50 字元"); return; }
-    if (profileEmail.trim() && !/^[a-zA-Z0-9._%+-]+(\+[a-zA-Z0-9._%+-]+)?@gmail\.com$/.test(profileEmail.trim())) { showToast("限用 Gmail 進行變更"); return; }
     setSettingsBusy(true);
     let result;
-    try { result = await api.updateProfile(profileName.trim(), profileEmail.trim()); }
+    try { result = await api.updateProfile(profileName.trim()); }
     catch { setSettingsBusy(false); showToast("更新個人資料失敗"); return; }
     setSettingsBusy(false);
     if (!result.ok) showToast(friendlyError(result, "更新個人資料失敗"));
-    else if (result.email_changed) onLogout();
     else { setCurrentUser((u) => ({ ...u, name: profileName.trim() })); showToast("個人資料已更新"); }
   };
   const resetPassword = async () => {
@@ -512,7 +508,6 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
         <section className="settings-panel" onClick={(e) => e.stopPropagation()}>
           <h2>帳號設定</h2>
           <label>名稱<input value={profileName} onChange={(e) => setProfileName(e.target.value)} /></label>
-          <label>Email<input type="email" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder="留空代表不變更" /></label>
           <button disabled={settingsBusy} onClick={saveProfile}>儲存個人資料</button>
           <hr />
           <label>新密碼<input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} /></label>

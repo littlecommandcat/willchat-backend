@@ -12,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -244,38 +243,9 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		member.Name = username
 	}
 
-	oldEmail := normalizeEmail(member.Email)
-	newEmail := member.Email
-	if request.Email != nil {
-		newEmail = normalizeEmail(*request.Email)
-		if newEmail != "" {
-			if err := binding.Validator.ValidateStruct(struct {
-				Email string `binding:"required,email"`
-			}{Email: newEmail}); err != nil {
-				writeError(c, http.StatusBadRequest, "invalid_email", "email must be valid")
-				return
-			}
-		}
-		if core.SafeCompare(newEmail, "") {
-			newEmail = member.Email
-		}
-		if normalizeEmail(newEmail) == oldEmail {
-			member.Email = newEmail
-		} else {
-			exists, err := s.memberExistsByEmail(newEmail)
-			if err != nil {
-				writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
-				return
-			}
-			if exists {
-				existing, err := s.memberByEmail(newEmail)
-				if err == nil && existing.Id != member.Id {
-					writeError(c, http.StatusConflict, "email_already_registered", "email is already registered")
-					return
-				}
-			}
-			member.Email = newEmail
-		}
+	if request.Email != nil && normalizeEmail(*request.Email) != "" && normalizeEmail(*request.Email) != normalizeEmail(member.Email) {
+		writeError(c, http.StatusForbidden, "email_change_not_allowed", "email cannot be changed")
+		return
 	}
 
 	if err := s.storeMember(s.db, member); err != nil {
@@ -302,7 +272,7 @@ func (s *Service) UpdateProfile(c *gin.Context) {
 		Event:   core.WSEventEnum.ProfileUpdate,
 		Payload: gin.H{"member": memberWSResponse},
 	})
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember, "email_changed": normalizeEmail(member.Email) != oldEmail}})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"member": responseMember}})
 }
 
 func (s *Service) ResetPassword(c *gin.Context) {

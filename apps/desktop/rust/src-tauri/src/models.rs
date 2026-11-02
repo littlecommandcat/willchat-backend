@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 // use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
-use smart_default::SmartDefault;
+// use smart_default::SmartDefault;
 
-#[derive(Clone, SmartDefault)]
-pub struct Network {
-    pub latency: i64,
-    #[default = 0]
-    pub tries: i64,
-}
+// #[derive(Clone, SmartDefault)]
+// pub struct Network {
+//     pub latency: i64,
+//     #[default = 0]
+//     pub tries: i64,
+// }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct MemberInfo {
@@ -36,7 +36,7 @@ pub struct AppState {
     pub messages: RwLock<HashMap<String, Vec<Value>>>,
     pub ws_busy: Mutex<bool>,
     pub ws_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    pub network: RwLock<Network>,
+    // pub network: RwLock<Network>,
 }
 
 pub type SharedState = Arc<AppState>;

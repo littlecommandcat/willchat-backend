@@ -1,46 +1,14 @@
-# Getting Started with Create React App
+# WillChat Web
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+使用 Node.js 18 以上版本。在儲存庫根目錄執行：
 
-## Available Scripts
+```sh
+npm --prefix apps/web ci
+npm --prefix apps/web start
+```
 
-In the project directory, you can run:
+開啟 `http://localhost:3000`。開發伺服器會將 API 與 WebSocket 請求轉發到 `http://localhost:8080`，請先啟動 Go 後端。
 
-### `npm start`
+正式部署使用 `npm --prefix apps/web run build`。由同一網域提供 `build` 靜態檔案，並將 `/api`、`/auth` 和 `/ws` 轉發至後端；`/ws` 需要支援 WebSocket 升級。如果使用獨立 API 網域，建置前設定 `REACT_APP_API_URL`，並在 API 閘道允許前端來源及 `Authorization`、`Content-Type` 標頭。
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
-
-### `npm test`
-
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
-
-### `npm run build`
-
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
-
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
-
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+目前後端沒有提供完整群組名單的端點，因此成員欄只列出已知成員。

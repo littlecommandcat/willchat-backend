@@ -134,7 +134,11 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   align-items: center;
   justify-content: space-between;
 }
-.brand { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.brand-mark { width: 24px; height: 24px; }
+.brand-mark rect { fill: var(--ink); }
+.brand-mark path { fill: none; stroke: var(--on-ink); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.brand-mark circle { fill: var(--online); stroke: var(--side); stroke-width: 4; }
 .sidebar-actions { display: flex; gap: 2px; }
 .section-label {
   padding: 8px 20px 6px;

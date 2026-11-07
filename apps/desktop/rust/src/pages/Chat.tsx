@@ -428,7 +428,7 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
       <div className={`toast ${toast ? "visible" : ""}`}>{toast}</div>
       <aside className="sidebar">
         <div className="sidebar-header">
-          <span className="brand">WillChat</span>
+          <span className="brand"><svg className="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><rect x="2" y="2" width="56" height="56" rx="16" /><path d="M15 22l7 19 8-14 8 14 7-19" /><circle cx="52" cy="52" r="8" /></svg>WillChat</span>
           <div className="sidebar-actions">
             <button className="icon-btn" title="貼上 ID 加入群組" aria-label="貼上 ID 加入群組" onClick={joinByPaste}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" /></svg>

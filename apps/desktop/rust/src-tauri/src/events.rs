@@ -66,7 +66,8 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
             crate::client::rebuild_groups(state, m).await;
             state.messages.write().await.clear();
             crate::ws::set_status(state, app, "connected").await;
-            let _ = app.emit("willchat:event", json!({"type": "ready"}));
+            let online = payload.get("online").cloned().unwrap_or_else(|| json!([]));
+            let _ = app.emit("willchat:event", json!({"type": "ready", "online": online}));
         }
         "message_send" => {
             if let Some(msg) = message {
@@ -197,6 +198,10 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
                     json!({"type": "member_update", "member": m}),
                 );
             }
+        }
+        "member_online" | "member_offline" => {
+            let mid = member.as_ref().and_then(|m| m.get("id")).cloned().unwrap_or_default();
+            let _ = app.emit("willchat:event", json!({"type": event_type, "member_id": mid}));
         }
         "error" | "disconnect" => {
             let message = member

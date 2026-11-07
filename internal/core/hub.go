@@ -48,6 +48,7 @@ func (h *Hub) Register(memberID string, groupID []string) *Client {
 	defer h.mu.Unlock()
 	h.clients[client] = struct{}{}
 	if h.members[memberID] == nil {
+		defer h.presenceLocked(memberID, groupID, WSEventEnum.MemberOnline)
 		h.members[memberID] = make(map[*Client]struct{})
 	}
 	h.members[memberID][client] = struct{}{}
@@ -66,6 +67,9 @@ func (h *Hub) AddGroup(memberID, groupID string) {
 		}
 
 		client.GroupID = append(client.GroupID, groupID)
+	}
+	if len(h.members[memberID]) > 0 {
+		h.presenceLocked(memberID, []string{groupID}, WSEventEnum.MemberOnline)
 	}
 }
 
@@ -171,11 +175,55 @@ func (h *Hub) closeLocked(client *Client) {
 	h.closed[client] = struct{}{}
 	delete(h.clients, client)
 	delete(h.members[client.MemberID], client)
-	if len(h.members[client.MemberID]) == 0 {
-		delete(h.members, client.MemberID)
-	}
 	close(client.Send)
 	deleteConnection()
+	if len(h.members[client.MemberID]) == 0 {
+		delete(h.members, client.MemberID)
+		h.presenceLocked(client.MemberID, client.GroupID, WSEventEnum.MemberOffline)
+	}
+}
+
+// presenceLocked tells everyone sharing a group with memberID that they went online/offline.
+func (h *Hub) presenceLocked(memberID string, groups []string, event wsEventType) {
+	payload, err := json.Marshal(WSEvent{Event: event, Payload: map[string]any{"member": map[string]string{"id": memberPrefix + memberID}}})
+	if err != nil {
+		return
+	}
+	for client := range h.clients {
+		if client.MemberID == memberID || !sharesGroup(client.GroupID, groups) {
+			continue
+		}
+		select {
+		case client.Send <- payload:
+		default:
+			h.closeLocked(client)
+		}
+	}
+}
+
+// OnlineFor lists online members (external IDs) sharing a group with memberID.
+func (h *Hub) OnlineFor(memberID string, groups []string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	seen := map[string]struct{}{}
+	online := []string{}
+	for client := range h.clients {
+		if _, ok := seen[client.MemberID]; ok || client.MemberID == memberID || !sharesGroup(client.GroupID, groups) {
+			continue
+		}
+		seen[client.MemberID] = struct{}{}
+		online = append(online, memberPrefix+client.MemberID)
+	}
+	return online
+}
+
+func sharesGroup(a, b []string) bool {
+	for _, id := range a {
+		if containsGroup(b, id) {
+			return true
+		}
+	}
+	return false
 }
 
 func containsGroup(groups []string, groupID string) bool {

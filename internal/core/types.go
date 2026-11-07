@@ -60,6 +60,8 @@ type eventType struct {
 	SendMessage   wsEventType
 	DeleteMessage wsEventType
 	ProfileUpdate wsEventType
+	MemberOnline  wsEventType
+	MemberOffline wsEventType
 	JoinGroup     wsEventType
 	LeaveGroup    wsEventType
 	CreateGroup   wsEventType
@@ -76,6 +78,8 @@ var WSEventEnum = eventType{
 
 	// Member
 	ProfileUpdate: wsEventType(eventMemberType + "update"),
+	MemberOnline:  wsEventType(eventMemberType + "online"),
+	MemberOffline: wsEventType(eventMemberType + "offline"),
 
 	// Group
 	JoinGroup:   wsEventType(eventGroupType + "join"),

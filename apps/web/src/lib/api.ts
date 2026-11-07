@@ -89,6 +89,7 @@ export interface ServerEvent {
     member?: Account;
     group?: GroupRecord;
     message?: Message;
+    online?: string[];
   };
 }
 

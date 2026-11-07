@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, onServerEvent, type Group, type Member, type Message } from "../lib/api";
+import StatusIcon, { statusLabel, type ConnectionStatus } from "../StatusIcon";
 
 const errorCodeMap: Record<string, string> = {
   owner_cannot_leave: "群主不能退出自己的群組",
@@ -35,6 +36,8 @@ function formatTime(ts: number): string {
 
 export default function Chat({ onLogout }: { onLogout: () => void }) {
   const [currentUser, setCurrentUser] = useState<Member>({ id: "", name: "" });
+  const [status, setStatus] = useState<ConnectionStatus>("closed");
+  const [online, setOnline] = useState<Set<string>>(new Set());
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [messagesByGroup, setMessagesByGroup] = useState<Record<string, Message[]>>({});
@@ -98,6 +101,7 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
     async (evt: { type: string; [key: string]: unknown }) => {
       switch (evt.type) {
         case "ready":
+          setOnline(new Set((evt.online as string[]) || []));
           await applyState();
           if (activeGroupRef.current) await loadMessages(activeGroupRef.current);
           break;
@@ -192,6 +196,19 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
           });
           break;
         }
+        case "websocket_status":
+          setStatus(evt.status as ConnectionStatus);
+          break;
+        case "member_online":
+        case "member_offline": {
+          const id = evt.member_id as string | undefined;
+          if (id) setOnline((prev) => {
+            const next = new Set(prev);
+            if (evt.type === "member_online") next.add(id); else next.delete(id);
+            return next;
+          });
+          break;
+        }
         case "error":
           break;
         case "auth_required":
@@ -215,6 +232,8 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
       if (cancelled) return;
       setCurrentUser(data.member || { id: "", name: "" });
       setGroups(data.groups || []);
+      const current = await api.getWebsocketStatus().catch(() => "closed");
+      if (!cancelled) setStatus(current as ConnectionStatus);
     };
     init();
     return () => {
@@ -397,24 +416,31 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
 
   const activeGroup = findGroup(activeGroupId);
   const activeMessages = activeGroupId ? messagesByGroup[activeGroupId] || [] : [];
-
+  const isOnline = (id: string) => (id === currentUser.id ? status === "connected" : online.has(id));
+  const members = activeGroup
+    ? [...activeGroup.members].sort((a, b) => Number(isOnline(b.id)) - Number(isOnline(a.id)))
+    : [];
+  const onlineCount = members.filter((m) => isOnline(m.id)).length;
+  const initial = (name: string) => (name || "?").trim().charAt(0).toUpperCase();
 
   return (
     <div className="layout">
       <div className={`toast ${toast ? "visible" : ""}`}>{toast}</div>
       <aside className="sidebar">
         <div className="sidebar-header">
-          <span>群組</span>
+          <span className="brand">WillChat</span>
           <div className="sidebar-actions">
-            <button className="sidebar-action" title="貼上 ID 加入群組" onClick={joinByPaste}>
-              ⤵
+            <button className="icon-btn" title="貼上 ID 加入群組" aria-label="貼上 ID 加入群組" onClick={joinByPaste}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3" /></svg>
             </button>
-            <button className="sidebar-action" title="新增群組" onClick={createGroup}>
-              ＋
+            <button className="icon-btn" title="新增群組" aria-label="新增群組" onClick={createGroup}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
             </button>
           </div>
         </div>
+        <div className="section-label">群組</div>
         <ul className="group-list">
+          {groups.length === 0 && <li className="list-empty">還沒有群組，點右上角建立或加入。</li>}
           {groups.map((group) => {
             const isOwner = group.owner_id === currentUser.id;
             const isMember = group.members.some((m) => m.id === currentUser.id);
@@ -424,18 +450,18 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
                 className={`group-item ${activeGroupId === group.id ? "active" : ""}`}
                 onClick={() => selectGroup(group.id)}
               >
-                <div className="group-name">{group.name}</div>
-                <div className="group-members">{group.members.length} 位成員</div>
+                <span className="group-mark">{initial(group.name)}</span>
+                <span className="group-name">{group.name}</span>
                 <div className="group-actions" onClick={(e) => e.stopPropagation()}>
                   <button onClick={() => copyGroupId(group.id)}>複製 ID</button>
                   {isMember && !isOwner && (
-                    <button onClick={() => leaveGroup(group.id)}>退出</button>
+                    <button className="danger" onClick={() => leaveGroup(group.id)}>退出</button>
                   )}
                   {!isMember && (
                     <button onClick={() => joinGroup(group.id)}>加入</button>
                   )}
                   {isOwner && (
-                    <button onClick={() => deleteGroup(group.id)}>刪除</button>
+                    <button className="danger" onClick={() => deleteGroup(group.id)}>刪除</button>
                   )}
                 </div>
               </li>
@@ -443,18 +469,25 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
           })}
         </ul>
         <div className="account-settings">
-          <span>{currentUser.name || "帳號"}</span>
-          <button className="sidebar-action" title="帳號設定" onClick={openSettings}>⚙</button>
+          <span className="avatar">{initial(currentUser.name)}<StatusIcon status={status} /></span>
+          <span className="account-name">
+            {currentUser.name || "帳號"}
+            <small>{statusLabel(status)}</small>
+          </span>
+          <button className="icon-btn" title="帳號設定" aria-label="帳號設定" onClick={openSettings}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+          </button>
         </div>
       </aside>
       <main className="chat">
         <div className="chat-header">
-          {activeGroup ? activeGroup.name : "請選擇群組"}
+          <div className="chat-title">{activeGroup ? activeGroup.name : "請選擇群組"}</div>
+          {activeGroup && <div className="chat-sub">{onlineCount} 人在線</div>}
         </div>
         <div className="messages">
           {activeMessages.length === 0 ? (
             <div className="message-empty">
-              {activeGroup ? "尚無訊息" : "選擇左側群組開始聊天"}
+              {activeGroup ? "尚無訊息，打個招呼吧" : "選擇左側群組開始聊天"}
             </div>
           ) : (
             activeMessages.map((msg) => {
@@ -463,72 +496,79 @@ export default function Chat({ onLogout }: { onLogout: () => void }) {
               return (
                 <div key={msg.id} className={`message ${own ? "own" : "other"}`}>
                   <div className="meta">
-                    {(own ? currentUser.name : author) + " · " + formatTime(msg.timestamp)}
+                    {!own && <b>{author}</b>}
+                    {formatTime(msg.timestamp)}
                   </div>
-                  {msg.reply_to?.content && (
-                    <div className="reply-quote">
-                      {(msg.reply_to.authorid === currentUser.id ? "回覆：" : "回覆 ") +
-                        msg.reply_to.content}
-                    </div>
-                  )}
-                  <div>{msg.content}</div>
-                  {(msg.attachments || []).map((att, i) =>
-                    att.data ? (
-                      <img
-                        key={i}
-                        className="attachment"
-                        src={`data:${att.mime_type || "image/jpeg"};base64,${att.data}`}
-                        alt=""
-                      />
-                    ) : null
-                  )}
+                  <div className="bubble">
+                    {msg.reply_to?.content && (
+                      <div className="reply-quote">{"回覆 " + msg.reply_to.content}</div>
+                    )}
+                    <div>{msg.content}</div>
+                    {(msg.attachments || []).map((att, i) =>
+                      att.data ? (
+                        <img
+                          key={i}
+                          className="attachment"
+                          src={`data:${att.mime_type || "image/jpeg"};base64,${att.data}`}
+                          alt=""
+                        />
+                      ) : null
+                    )}
+                  </div>
                 </div>
               );
             })
           )}
         </div>
         <div className="chat-input">
-          <input
-            type="text"
-            placeholder="輸入訊息..."
-            disabled={!activeGroup}
-            value={draft}
-            maxLength={2000}
-            onChange={(e) => setDraft(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") sendMessage();
-            }}
-          />
-          <button disabled={!activeGroup} onClick={sendMessage}>
-            傳送
-          </button>
+          <div className="composer">
+            <input
+              type="text"
+              placeholder={activeGroup ? `傳訊息到 ${activeGroup.name}` : "輸入訊息..."}
+              disabled={!activeGroup}
+              value={draft}
+              maxLength={2000}
+              onChange={(e) => setDraft(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) sendMessage();
+              }}
+            />
+            <button disabled={!activeGroup || actionBusy || !draft.trim()} onClick={sendMessage}>
+              傳送
+            </button>
+          </div>
         </div>
       </main>
       {settingsOpen && <div className="settings-backdrop" onClick={() => setSettingsOpen(false)}>
         <section className="settings-panel" onClick={(e) => e.stopPropagation()}>
           <h2>帳號設定</h2>
-          <label>名稱<input value={profileName} onChange={(e) => setProfileName(e.target.value)} /></label>
-          <button disabled={settingsBusy} onClick={saveProfile}>儲存個人資料</button>
+          <label>名稱<input className="field" value={profileName} onChange={(e) => setProfileName(e.target.value)} /></label>
+          <button className="btn" disabled={settingsBusy} onClick={saveProfile}>儲存個人資料</button>
           <hr />
-          <label>新密碼<input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} /></label>
-          <label>確認新密碼<input type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} /></label>
-          <button disabled={settingsBusy} onClick={resetPassword}>重設密碼並返回登入</button>
-          <button className="settings-cancel" onClick={() => setSettingsOpen(false)}>取消</button>
+          <label>新密碼<input className="field" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} minLength={8} /></label>
+          <label>確認新密碼<input className="field" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} minLength={8} /></label>
+          <button className="btn" disabled={settingsBusy} onClick={resetPassword}>重設密碼並返回登入</button>
+          <button className="btn ghost" onClick={() => setSettingsOpen(false)}>取消</button>
         </section>
       </div>}
       <aside className="members-panel">
         <div className="members-header">成員</div>
+        {activeGroup && <div className="section-label">在線 {onlineCount} / {members.length}</div>}
         <ul className="member-list">
-          {(activeGroup ? activeGroup.members : []).map((member) => (
-            <li key={member.id} className="member-item">
-              <span className="member-avatar">{(member.name || "?").charAt(0)}</span>
-              <span>{member.name}</span>
-            </li>
-          ))}
+          {members.map((member) => {
+            const on = isOnline(member.id);
+            return (
+              <li key={member.id} className={`member-item ${on ? "online" : "offline"}`}>
+                <span className="avatar">
+                  {initial(member.name)}
+                  <span className={`presence ${on ? "online" : "offline"}`} title={on ? "上線" : "離線"} />
+                </span>
+                <span>{member.name}</span>
+              </li>
+            );
+          })}
         </ul>
       </aside>
     </div>
   );
 }
-
-

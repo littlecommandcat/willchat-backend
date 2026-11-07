@@ -70,6 +70,7 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 			"id":     responseMember.ID,
 			"name":   responseMember.Name,
 			"groups": responseMember.GroupRecords,
+			"online": s.hub.OnlineFor(s.snowflake.ToSnowflake(memberID), groupIDs),
 		},
 	})
 

@@ -57,6 +57,7 @@ func Router(db *pgxpool.Pool) (*gin.Engine, error) {
 	protected.DELETE("/:group_id", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.DeleteGroup)
 	protected.POST("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.JoinGroup)
 	protected.DELETE("/:group_id/members", middleware.RateLimitToken(5, 10*time.Second), middleware.RateLimitIP(10, 10*time.Second), chatService.LeaveGroup)
+	protected.GET("/:group_id/members", middleware.RateLimitToken(7, 5*time.Second), middleware.RateLimitIP(14, 5*time.Second), chatService.GetMembers)
 	protected.GET("/:group_id/members/:member_id", middleware.RateLimitToken(7, 5*time.Second), middleware.RateLimitIP(14, 5*time.Second), chatService.GetMember)
 	protected.POST("/:group_id/messages", middleware.RateLimitToken(10, 5*time.Second), middleware.RateLimitIP(25, 10*time.Second), chatService.SendMessage)
 	protected.DELETE("/:group_id/messages", middleware.RateLimitToken(7, 5*time.Second), middleware.RateLimitIP(14, 10*time.Second), chatService.DeleteMessage)

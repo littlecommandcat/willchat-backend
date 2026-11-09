@@ -585,7 +585,75 @@ func (s *ChatService) GetMember(c *gin.Context) {
 		"member": memberProfile{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, CreatedAt: s.snowflake.ToTime(member.Id)},
 	}})
 }
+//add getmembers 
+func (s *ChatService) GetMembers(c *gin.Context) {
+	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
+	requesterID := currentMemberID(c)
 
+	if groupID == "" {
+		writeError(c, http.StatusBadRequest, "invalid_request", "group_id is required")
+		return
+	}
+
+	if _, err := s.auth.getGroup(groupID); errors.Is(err, pgx.ErrNoRows) {
+		writeError(c, http.StatusNotFound, "group_not_found", "group not found")
+		return
+	} else if err != nil {
+		log.Printf("db group read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+	if !s.isMember(groupID, requesterID) {
+		writeError(c, http.StatusForbidden, "not_group_member", "member is not a member of this group")
+		return
+	}
+
+	rows, err := s.db.Query(context.Background(), `
+		SELECT m.id, m.name, m.created_at
+		FROM group_members gm
+		JOIN members m ON m.id = gm.member_id
+		WHERE gm.group_id = $1
+		ORDER BY m.created_at ASC`, groupID)
+	if err != nil {
+		log.Printf("db group members read failed group_id=%s: %v", groupID, err)
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+	defer rows.Close()
+
+	members := make([]memberListResponse, 0)
+	for rows.Next() {
+		var id string
+		var name string
+		var createdAt int64
+		if err := rows.Scan(&id, &name, &createdAt); err != nil {
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+			return
+		}
+		members = append(members, memberListResponse{
+			ID:        s.snowflake.ToMemberID(id),
+			Name:      name,
+			CreatedAt: createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+
+	groupRecord, err := s.auth.getGroup(groupID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
+	groupResponse := toGroupResponse(s.snowflake, groupRecord)
+
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
+		"group":   groupResponse,
+		"members": members,
+	}})
+}
+ 
 func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse {
 	response := groupResponse{Name: group.Name, CreatedAt: group.CreatedAt}
 	if group.GroupID != "" {

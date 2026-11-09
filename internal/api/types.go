@@ -52,6 +52,13 @@ type memberProfile struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// memberListResponse
+type memberListResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 // Chat requests and records
 // Maybe it failed to get data (idk)
 type groupRecord struct {

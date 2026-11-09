@@ -17,10 +17,18 @@ type Client struct {
 }
 
 type Hub struct {
-	mu      sync.Mutex
-	clients map[*Client]struct{}
-	members map[string]map[*Client]struct{}
-	closed  map[*Client]struct{}
+	memberResponse func(string) (any, error)
+	mu             sync.Mutex
+	clients        map[*Client]struct{}
+	members        map[string]map[*Client]struct{}
+	closed         map[*Client]struct{}
+}
+
+// SetMemberResponse configures the public member representation used by presence events.
+func (h *Hub) SetMemberResponse(resolve func(string) (any, error)) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.memberResponse = resolve
 }
 
 func deleteConnection() {
@@ -185,7 +193,16 @@ func (h *Hub) closeLocked(client *Client) {
 
 // presenceLocked tells everyone sharing a group with memberID that they went online/offline.
 func (h *Hub) presenceLocked(memberID string, groups []string, event wsEventType) {
-	payload, err := json.Marshal(WSEvent{Event: event, Payload: map[string]any{"member": map[string]string{"id": memberPrefix + memberID}}})
+	var member any = map[string]string{"id": memberPrefix + memberID}
+	if h.memberResponse != nil {
+		var err error
+		member, err = h.memberResponse(memberID)
+		if err != nil {
+			log.Printf("presence member lookup failed member_id=%s: %v", memberID, err)
+			return
+		}
+	}
+	payload, err := json.Marshal(WSEvent{Event: event, Payload: map[string]any{"member": member}})
 	if err != nil {
 		return
 	}

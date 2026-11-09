@@ -126,7 +126,9 @@ class Bridge(QObject):
             "timestamp": m.timestamp,
             "type": m.type.value if hasattr(m.type, "value") else 0,
             "attachments": m.attachments or [],
-            "reply_to": m.reply_to,
+            "author": {"id": m.author.id, "name": m.author.name},
+            "reply_to": {"id": m.reply_to.id, "content": m.reply_to.content, "type": m.reply_to.type,
+                         "author": {"id": m.reply_to.author.id, "name": m.reply_to.author.name}} if m.reply_to else None,
             "status": m.status,
             "group": {"id": m.group.id, "name": m.group.name} if m.group else None,
         }
@@ -141,7 +143,7 @@ class Bridge(QObject):
 
     def _message_with_author(self, m: Message) -> dict:
         data = self._ser_message(m)
-        data["author_name"] = self._member_name(m.authorid)
+        data["author_name"] = m.author.name or self._member_name(m.authorid)
         return data
     
     def _register_listeners(self) -> None:
@@ -260,7 +262,7 @@ class Bridge(QObject):
         if uid:
             entry["members"].setdefault(uid, self._current_user.get("name", "我"))
         if group.owner_id:
-            entry["members"].setdefault(group.owner_id, "群主")
+            entry["members"][group.owner_id] = group.owner.name if group.owner and group.owner.name else "群主"
 
     def _rebuild_groups(self) -> None:
         try:
@@ -301,8 +303,7 @@ class Bridge(QObject):
         self._current_user = {"id": member.get("id", ""), "name": member.get("name", "")}
         self._groups = {}
         for g in member.get("groups") or []:
-            grp = Group(name=g.get("name", ""), id=g.get("group_id", ""),
-                        owner_id=g.get("owner_id", ""), created_at=g.get("created_at", 0))
+            grp = Group.from_payload(g)
             self._upsert_group(grp)
         self._start_ws()
         return json.dumps({"ok": True, "member": self._current_user}, ensure_ascii=False)
@@ -344,8 +345,7 @@ class Bridge(QObject):
             self._current_user = {"id": member.get("id", ""), "name": member.get("name", "")}
             self._groups = {}
             for g in member.get("groups") or []:
-                grp = Group(name=g.get("name", ""), id=g.get("group_id", ""),
-                            owner_id=g.get("owner_id", ""), created_at=g.get("created_at", 0))
+                grp = Group.from_payload(g)
                 self._upsert_group(grp)
             self._start_ws()
         return json.dumps({"ok": True}, ensure_ascii=False)

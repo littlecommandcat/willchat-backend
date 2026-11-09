@@ -21,6 +21,12 @@ pub fn ser_group(group: &GroupEntry) -> Value {
 pub fn ser_message(msg: &Value, author_name: &str) -> Value {
     let mut data = msg.clone();
     data["author_name"] = json!(author_name);
+    if let Some(author) = msg.get("author").filter(|v| v.is_object()) {
+        data["author_id"] = author.get("id").cloned().unwrap_or_default();
+        if let Some(name) = author.get("name").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            data["author_name"] = json!(name);
+        }
+    }
     if data.get("author_id").is_none() {
         if let Some(aid) = msg.get("authorid") {
             data["author_id"] = aid.clone();
@@ -66,7 +72,9 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
             crate::client::rebuild_groups(state, m).await;
             state.messages.write().await.clear();
             crate::ws::set_status(state, app, "connected").await;
-            let online = payload.get("online").cloned().unwrap_or_else(|| json!([]));
+            let online: Vec<Value> = payload.get("online").and_then(Value::as_array).map(|members| {
+                members.iter().map(|m| m.get("id").unwrap_or(m).clone()).collect()
+            }).unwrap_or_default();
             let _ = app.emit("willchat:event", json!({"type": "ready", "online": online}));
         }
         "message_send" => {
@@ -81,7 +89,7 @@ pub async fn handle_ws_event(state: &SharedState, app: &AppHandle, event: &Value
                             .map(|s| s.to_string())
                     })
                     .unwrap_or_default();
-                let author_id = msg.get("authorid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let author_id = msg.get("author").and_then(|v| v.get("id")).or_else(|| msg.get("authorid")).and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let author_name = resolve_member_name(state, &author_id).await;
                 let ser = ser_message(&msg, &author_name);
                 if !gid.is_empty() {
@@ -240,6 +248,26 @@ mod tests {
         let message = ser_message(&json!({"id": "message", "authorid": "alice"}), "Alice");
         assert_eq!(message["author_id"], "alice");
         assert_eq!(message["author_name"], "Alice");
+    }
+
+    #[test]
+    fn message_uses_embedded_author_and_preserves_reply_author() {
+        let message = ser_message(&json!({
+            "id": "message", "author": {"id": "alice", "name": "Alice"},
+            "reply_to": {"author": {"id": "bob", "name": "Bob"}, "content": "Hi"}
+        }), "成員");
+        assert_eq!(message["author_id"], "alice");
+        assert_eq!(message["author_name"], "Alice");
+        assert_eq!(message["reply_to"]["author"]["name"], "Bob");
+    }
+
+    #[test]
+    fn group_parses_embedded_owner() {
+        let group = parse_group(&json!({
+            "group_id": "chat", "name": "Chat", "owner": {"id": "alice", "name": "Alice"}
+        }));
+        assert_eq!(group.owner_id, "alice");
+        assert_eq!(group.members[0].name, "Alice");
     }
 }
 

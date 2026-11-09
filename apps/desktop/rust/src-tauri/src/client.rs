@@ -33,8 +33,8 @@ pub fn parse_group(group: &Value) -> GroupEntry {
     GroupEntry {
         id: group.get("group_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
         name: group.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        owner_id: group.get("owner_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-        members: Vec::new(),
+        owner_id: group.get("owner").and_then(|v| v.get("id")).or_else(|| group.get("owner_id")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+        members: group.get("owner").filter(|v| v.is_object()).map(|v| vec![parse_member(v)]).unwrap_or_default(),
     }
 }
 
@@ -55,6 +55,13 @@ pub async fn upsert_group(state: &SharedState, group: GroupEntry) {
     }
     if !group.owner_id.is_empty() {
         entry.owner_id = group.owner_id;
+    }
+    for member in group.members {
+        if let Some(existing) = entry.members.iter_mut().find(|m| m.id == member.id) {
+            *existing = member;
+        } else {
+            entry.members.push(member);
+        }
     }
     let user = state.current_user.read().await;
     if !user.id.is_empty() && !entry.members.iter().any(|m| m.id == user.id) {

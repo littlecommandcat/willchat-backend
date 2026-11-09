@@ -164,7 +164,9 @@ async fn get_messages(state: State<'_, SharedState>, group_id: String) -> Result
                 if let Some(arr) = arr {
                     for m in arr {
                         let author_id = m
-                            .get("authorid")
+                            .get("author")
+                            .and_then(|v| v.get("id"))
+                            .or_else(|| m.get("authorid"))
                             .and_then(|v| v.as_str())
                             .unwrap_or("")
                             .to_string();

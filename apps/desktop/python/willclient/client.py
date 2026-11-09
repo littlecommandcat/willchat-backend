@@ -145,7 +145,7 @@ class Client:
                             # READY
                             if event_type == EventType.READY:
                                 if not self._ready.is_set():
-                                    self._member = Member.from_payload(payload)
+                                    self._member = Member.from_payload(payload or {})
                                     self._ready.set()
 
                             # Not READY
@@ -156,6 +156,9 @@ class Client:
                                 payload = {}
 
                             payload_data = {}
+                            if "online" in payload:
+                                payload_data["online"] = [Member.from_payload(item if isinstance(item, dict) else {"id": item})
+                                                          for item in payload.get("online", []) or []]
 
                             if payload.get("member"):
                                 payload_data["member"] = Member.from_payload(payload["member"])

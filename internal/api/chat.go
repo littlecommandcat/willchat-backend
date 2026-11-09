@@ -71,11 +71,17 @@ func (s *ChatService) CreateGroup(c *gin.Context) {
 		return
 	}
 
+	owner, err := s.auth.memberByID(memberID)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
 	groupID := s.snowflake.Next()
 	group := groupRecord{
 		GroupID:   groupID,
 		Name:      name,
 		OwnerID:   s.snowflake.ToSnowflake(memberID),
+		OwnerName: owner.Name,
 		CreatedAt: time.Now().UnixMilli(),
 	}
 
@@ -127,15 +133,8 @@ func (s *ChatService) GetGroup(c *gin.Context) {
 		return
 	}
 
-	ownerID := s.snowflake.ToSnowflake(group.OwnerID)
-	memberData, err := s.auth.memberByID(ownerID)
-	if err != nil {
-		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
-		return
-	}
 	groupResponse := toGroupResponse(s.snowflake, group)
-	memberResponse, _ := s.auth.toMemberResponse(memberData, false)
-	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": groupResponse, "member": memberResponse}})
+	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"group": groupResponse}})
 }
 
 func (s *ChatService) JoinGroup(c *gin.Context) {
@@ -380,7 +379,11 @@ func (s *ChatService) SendMessage(c *gin.Context) {
 
 	groupRecord, _ := s.auth.getGroup(groupID)
 	responseGroup := toGroupResponse(s.snowflake, groupRecord)
-	responseMessage := s.toMessageResponse(message)
+	responseMessage, err := s.toMessageResponse(message)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
 	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.SendMessage, Payload: gin.H{"message": responseMessage, "group": responseGroup}})
 	c.JSON(http.StatusCreated, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage, "group": responseGroup}})
 }
@@ -428,7 +431,11 @@ func (s *ChatService) DeleteMessage(c *gin.Context) {
 
 	groupRecord, _ := s.auth.getGroup(groupID)
 	responseGroup := toGroupResponse(s.snowflake, groupRecord)
-	responseMessage := s.toMessageResponse(message)
+	responseMessage, err := s.toMessageResponse(message)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
 	s.hub.BroadcastOnlyGroup(groupID, core.WSEvent{Event: core.WSEventEnum.DeleteMessage, Payload: gin.H{"message": responseMessage, "group": responseGroup}})
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{"message": responseMessage, "group": responseGroup}})
 }
@@ -480,7 +487,12 @@ func (s *ChatService) GetMessages(c *gin.Context) {
 		if message.Status == core.MessageStatusEnum.Deleted {
 			continue
 		}
-		messageResponses = append(messageResponses, s.toMessageResponse(message))
+		response, err := s.toMessageResponse(message)
+		if err != nil {
+			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+			return
+		}
+		messageResponses = append(messageResponses, response)
 	}
 
 	c.JSON(http.StatusOK, core.Response{
@@ -526,11 +538,16 @@ func (s *ChatService) getMessage(c *gin.Context, groupID string, memberID string
 		writeError(c, http.StatusNotFound, "message_not_found", "message not found")
 		return
 	}
+	response, err := s.toMessageResponse(message)
+	if err != nil {
+		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
+		return
+	}
 	c.JSON(http.StatusOK, core.Response{
 		Status: "ok",
 		Code:   "success",
 		Data: gin.H{
-			"message": s.toMessageResponse(message),
+			"message": response,
 		},
 	})
 }
@@ -582,10 +599,11 @@ func (s *ChatService) GetMember(c *gin.Context) {
 
 	c.JSON(http.StatusOK, core.Response{Status: "ok", Code: "success", Data: gin.H{
 		"group":  groupResponse,
-		"member": memberProfile{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, CreatedAt: s.snowflake.ToTime(member.Id)},
+		"member": limitedMemberResponse(s.snowflake, member),
 	}})
 }
-//add getmembers 
+
+// add getmembers
 func (s *ChatService) GetMembers(c *gin.Context) {
 	groupID := s.snowflake.ToSnowflake(c.Param("group_id"))
 	requesterID := currentMemberID(c)
@@ -609,7 +627,7 @@ func (s *ChatService) GetMembers(c *gin.Context) {
 	}
 
 	rows, err := s.db.Query(context.Background(), `
-		SELECT m.id, m.name, m.created_at
+		SELECT m.id, m.name
 		FROM group_members gm
 		JOIN members m ON m.id = gm.member_id
 		WHERE gm.group_id = $1
@@ -621,20 +639,15 @@ func (s *ChatService) GetMembers(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	members := make([]memberListResponse, 0)
+	members := make([]memberResponse, 0)
 	for rows.Next() {
 		var id string
 		var name string
-		var createdAt int64
-		if err := rows.Scan(&id, &name, &createdAt); err != nil {
+		if err := rows.Scan(&id, &name); err != nil {
 			writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
 			return
 		}
-		members = append(members, memberListResponse{
-			ID:        s.snowflake.ToMemberID(id),
-			Name:      name,
-			CreatedAt: createdAt,
-		})
+		members = append(members, limitedMemberResponse(s.snowflake, core.MemberData{Id: id, Name: name}))
 	}
 	if err := rows.Err(); err != nil {
 		writeError(c, http.StatusServiceUnavailable, "database_unavailable", errDatabaseUnavailable.Error())
@@ -653,19 +666,20 @@ func (s *ChatService) GetMembers(c *gin.Context) {
 		"members": members,
 	}})
 }
- 
+
 func toGroupResponse(snowflake *core.Snowflake, group groupRecord) groupResponse {
 	response := groupResponse{Name: group.Name, CreatedAt: group.CreatedAt}
 	if group.GroupID != "" {
 		response.GroupID = snowflake.ToGroupID(group.GroupID)
 	}
 	if group.OwnerID != "" {
-		response.OwnerID = snowflake.ToMemberID(group.OwnerID)
+		owner := limitedMemberResponse(snowflake, core.MemberData{Id: group.OwnerID, Name: group.OwnerName})
+		response.Owner = &owner
 	}
 	return response
 }
 
-func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
+func (s *ChatService) toMessageResponse(message core.Message) (messageResponse, error) {
 	response := messageResponse{
 		Content:   message.Content,
 		Id:        s.snowflake.ToMessageID(message.Id),
@@ -674,7 +688,11 @@ func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 		Status:    message.Status,
 	}
 	if message.AuthorId != "" {
-		response.AuthorId = s.snowflake.ToMemberID(message.AuthorId)
+		author, err := s.auth.publicMemberByID(message.AuthorId)
+		if err != nil {
+			return messageResponse{}, err
+		}
+		response.Author = author
 	}
 	for _, attachment := range message.Attachments {
 		external := attachmentResponse{
@@ -693,14 +711,18 @@ func (s *ChatService) toMessageResponse(message core.Message) messageResponse {
 		response.Attachments = append(response.Attachments, external)
 	}
 	if message.ReplyTo != nil {
+		author, err := s.auth.publicMemberByID(message.ReplyTo.AuthorId)
+		if err != nil {
+			return messageResponse{}, err
+		}
 		response.ReplyTo = &replyToResponse{
-			Id:       s.snowflake.ToMessageID(message.ReplyTo.Id),
-			AuthorId: s.snowflake.ToMemberID(message.ReplyTo.AuthorId),
-			Content:  message.ReplyTo.Content,
-			Type:     message.ReplyTo.Type,
+			Id:      s.snowflake.ToMessageID(message.ReplyTo.Id),
+			Author:  author,
+			Content: message.ReplyTo.Content,
+			Type:    message.ReplyTo.Type,
 		}
 	}
-	return response
+	return response, nil
 }
 
 func (s *ChatService) createMessage(groupID, memberID, content string, attachments []core.Attachment, replyTo *core.ReplyTo) (core.Message, []byte, error) {

@@ -278,7 +278,7 @@
                 if (msg.reply_to && msg.reply_to.content) {
                     const quote = document.createElement("div");
                     quote.className = "reply-quote";
-                    quote.textContent = (msg.reply_to.authorid === currentUser.id ? "回覆：" : "回覆 ") + msg.reply_to.content;
+                    quote.textContent = ((msg.reply_to.author && msg.reply_to.author.id || msg.reply_to.authorid) === currentUser.id ? "回覆：" : "回覆 ") + msg.reply_to.content;
                     div.appendChild(quote);
                 }
                 const content = document.createElement("div");

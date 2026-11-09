@@ -10,6 +10,8 @@ class EventType(str, Enum):
     GROUP_LEAVE = "group_leave"
 
     MEMBER_UPDATE = "member_update"
+    MEMBER_ONLINE = "member_online"
+    MEMBER_OFFLINE = "member_offline"
 
     READY = "ready"
     DISCONNECT = "disconnect"

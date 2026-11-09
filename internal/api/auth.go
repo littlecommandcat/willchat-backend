@@ -49,6 +49,17 @@ func NewService(db *pgxpool.Pool, snowflake *core.Snowflake) (*Service, error) {
 
 func (s *Service) SetHub(hub *core.Hub) {
 	s.hub = hub
+	hub.SetMemberResponse(func(id string) (any, error) {
+		return s.publicMemberByID(id)
+	})
+}
+
+func (s *Service) publicMemberByID(id string) (memberResponse, error) {
+	member, err := s.memberByID(id)
+	if err != nil {
+		return memberResponse{}, err
+	}
+	return limitedMemberResponse(s.snowflake, member), nil
 }
 
 func (s *Service) Register(c *gin.Context) {
@@ -368,12 +379,16 @@ func (s *Service) tokenBelongsToMember(token, memberID string) bool {
 }
 
 func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberResponse, error) {
+	if limit {
+		return limitedMemberResponse(s.snowflake, member), nil
+	}
 	ctx := context.Background()
 	memberID := s.snowflake.ToSnowflake(member.Id)
 
 	rows, err := s.db.Query(ctx, `
-		SELECT g.id, g.name, g.owner_id, g.created_at
+		SELECT g.id, g.name, g.owner_id, g.created_at, owner.name
 		FROM groups g
+		JOIN members owner ON owner.id = g.owner_id
 		JOIN group_members gm ON gm.group_id = g.id
 		WHERE gm.member_id = $1
 		ORDER BY g.created_at ASC`, memberID)
@@ -385,7 +400,7 @@ func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberRe
 	groupData := make([]groupResponse, 0)
 	for rows.Next() {
 		var g groupRecord
-		if err := rows.Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt, &g.OwnerName); err != nil {
 			return memberResponse{}, err
 		}
 		g.GroupID = g.ID
@@ -395,18 +410,28 @@ func (s *Service) toMemberResponse(member core.MemberData, limit bool) (memberRe
 		return memberResponse{}, err
 	}
 
-	if limit {
-		return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Block: []string{}, GroupRecords: make([]groupResponse, 0), Read: map[string]string{}}, nil
+	blocked := make([]memberResponse, 0, len(member.Block))
+	for _, id := range member.Block {
+		data, err := s.memberByID(id)
+		if err != nil {
+			return memberResponse{}, err
+		}
+		blocked = append(blocked, limitedMemberResponse(s.snowflake, data))
 	}
-	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: member.Block, Read: member.Read}, nil
+	return memberResponse{ID: s.snowflake.ToMemberID(member.Id), Name: member.Name, Email: member.Email, GroupRecords: groupData, Block: blocked, Read: member.Read}, nil
+}
+
+func limitedMemberResponse(snowflake *core.Snowflake, member core.MemberData) memberResponse {
+	return memberResponse{ID: snowflake.ToMemberID(member.Id), Name: member.Name, Block: []memberResponse{}, GroupRecords: []groupResponse{}, Read: map[string]string{}}
 }
 
 func (s *Service) getGroup(groupID string) (groupRecord, error) {
 	groupID = s.snowflake.ToSnowflake(groupID)
 	var g groupRecord
 	err := s.db.QueryRow(context.Background(),
-		`SELECT id, name, owner_id, created_at FROM groups WHERE id = $1`,
-		groupID).Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt)
+		`SELECT g.id, g.name, g.owner_id, g.created_at, owner.name
+		 FROM groups g JOIN members owner ON owner.id = g.owner_id WHERE g.id = $1`,
+		groupID).Scan(&g.ID, &g.Name, &g.OwnerID, &g.CreatedAt, &g.OwnerName)
 	if err != nil {
 		return groupRecord{}, err
 	}

@@ -9,19 +9,38 @@ from config import BASE_URL
 from ..utils import raise_code_error, is_not_allowed_code
 from .enums import MessageType, ErrorType
 from .group import Group
+from .member import Member
+
+
+@dataclass
+class ReplyTo:
+    id: str
+    author: Member
+    content: str
+    type: int
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "ReplyTo":
+        return cls(id=payload.get("id", ""),
+                   author=Member.from_payload(payload.get("author") or {"id": payload.get("authorid", "")}),
+                   content=payload.get("content", ""), type=payload.get("type", 0))
 
 
 @dataclass
 class Message:
-    authorid: str
+    author: Member
     id: str
     content: str
     timestamp: int
     type: "MessageType"
     group: "Group" | None
     attachments: list = field(default_factory=list)
-    reply_to: dict | None = None
+    reply_to: ReplyTo | None = None
     status: str = ""
+
+    @property
+    def authorid(self) -> str:
+        return self.author.id
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Message":
@@ -38,14 +57,14 @@ class Message:
             message_type = MessageType.OTHER
 
         return cls(
-            authorid=message_payload.get("authorid", ""),
+            author=Member.from_payload(message_payload.get("author") or {"id": message_payload.get("authorid", "")}),
             id=message_payload.get("id", ""),
             content=message_payload.get("content", ""),
             timestamp=message_payload.get("timestamp", -1),
             type=message_type,
             group=group,
             attachments=message_payload.get("attachments", []) or [],
-            reply_to=message_payload.get("reply_to"),
+            reply_to=ReplyTo.from_payload(message_payload["reply_to"]) if message_payload.get("reply_to") else None,
             status=message_payload.get("status", ""),
         )
 

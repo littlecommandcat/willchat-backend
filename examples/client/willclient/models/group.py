@@ -17,15 +17,20 @@ class Group:
     id: str
     owner_id: str
     created_at: int
+    owner: "Member | None" = None
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Group":
+        from .member import Member
+
         group_payload = payload["payload"]["group"] if "payload" in payload else payload
+        owner = Member.from_payload(group_payload.get("owner") or {"id": group_payload.get("owner_id", "")})
 
         return cls(
             name=group_payload.get("name", ""),
             id=group_payload.get("group_id", ""),
-            owner_id=group_payload.get("owner_id", ""),
+            owner_id=owner.id,
+            owner=owner,
             created_at=group_payload.get("created_at", ""),
         )
 

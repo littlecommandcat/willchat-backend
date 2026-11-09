@@ -8,6 +8,7 @@ from PyQt6.QtWebChannel import QWebChannel
 
 from bridge import Bridge
 from utils import local_dir
+from willclient import __version__
 
 
 def setup_logging():
@@ -49,6 +50,7 @@ class MainWindow(QMainWindow):
 
 
 app = QApplication(sys.argv)
+app.setApplicationVersion(__version__)
 setup_logging()
 window = MainWindow()
 window.show()

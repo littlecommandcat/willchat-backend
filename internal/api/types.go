@@ -41,22 +41,8 @@ type memberResponse struct {
 	Email string `json:"email"`
 	// GroupIDs     []string      `json:"group_ids"`
 	GroupRecords []groupResponse   `json:"groups"`
-	Block        []string          `json:"block"`
+	Block        []memberResponse  `json:"block"`
 	Read         map[string]string `json:"read"`
-}
-
-// memberProfile
-type memberProfile struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt int64  `json:"created_at"`
-}
-
-// memberListResponse
-type memberListResponse struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt int64  `json:"created_at"`
 }
 
 // Chat requests and records
@@ -66,6 +52,7 @@ type groupRecord struct {
 	ID        string `json:"id,omitempty"`
 	Name      string `json:"name,omitempty"`
 	OwnerID   string `json:"owner_id,omitempty"`
+	OwnerName string `json:"-"`
 	CreatedAt int64  `json:"created_at,omitempty"`
 }
 
@@ -96,10 +83,10 @@ type getMessagesRequest struct {
 // }
 
 type groupResponse struct {
-	GroupID   string `json:"group_id"`
-	Name      string `json:"name,omitempty"`
-	OwnerID   string `json:"owner_id,omitempty"`
-	CreatedAt int64  `json:"created_at,omitempty"`
+	GroupID   string          `json:"group_id"`
+	Name      string          `json:"name,omitempty"`
+	Owner     *memberResponse `json:"owner,omitempty"`
+	CreatedAt int64           `json:"created_at,omitempty"`
 }
 
 type messageResponse struct {
@@ -107,7 +94,7 @@ type messageResponse struct {
 	Attachments []attachmentResponse `json:"attachments,omitempty"`
 	ReplyTo     *replyToResponse     `json:"reply_to,omitempty"`
 	Id          string               `json:"id"`
-	AuthorId    string               `json:"authorid"`
+	Author      memberResponse       `json:"author"`
 	Timestamp   int64                `json:"timestamp"`
 	Type        core.MessageType     `json:"type"`
 	Status      core.MessageStatus   `json:"status"`
@@ -125,8 +112,8 @@ type attachmentResponse struct {
 
 // replyToResponse
 type replyToResponse struct {
-	Id       string           `json:"id"`
-	AuthorId string           `json:"authorid"`
-	Content  string           `json:"content"`
-	Type     core.MessageType `json:"type"`
+	Id      string           `json:"id"`
+	Author  memberResponse   `json:"author"`
+	Content string           `json:"content"`
+	Type    core.MessageType `json:"type"`
 }

@@ -61,20 +61,27 @@ func (s *ChatService) WebSocket(c *gin.Context) {
 		groupIDs = append(groupIDs, s.snowflake.ToSnowflake(groupRecords[i].GroupID))
 	}
 	client := s.hub.Register(s.snowflake.ToSnowflake(memberID), groupIDs)
+	defer s.hub.Unregister(client)
 	log.Printf("Websocket connected: %s", s.snowflake.ToSnowflake(memberID))
+	online := make([]memberResponse, 0)
+	for _, id := range s.hub.OnlineFor(s.snowflake.ToSnowflake(memberID), groupIDs) {
+		member, err := s.auth.publicMemberByID(id)
+		if err != nil {
+			log.Printf("WebSocket online member lookup failed: %v", err)
+			return
+		}
+		online = append(online, member)
+	}
 
 	// Ready event
 	s.hub.BroadcastOnlyMember(s.snowflake.ToSnowflake(memberID), core.WSEvent{
 		Event: core.WSEventEnum.Ready,
 		Payload: gin.H{
-			"id":     responseMember.ID,
-			"name":   responseMember.Name,
+			"member": responseMember,
 			"groups": responseMember.GroupRecords,
-			"online": s.hub.OnlineFor(s.snowflake.ToSnowflake(memberID), groupIDs),
+			"online": online,
 		},
 	})
-
-	defer s.hub.Unregister(client)
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()

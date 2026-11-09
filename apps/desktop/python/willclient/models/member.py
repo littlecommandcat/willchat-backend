@@ -9,20 +9,17 @@ class Member:
     name: str
     id: str
     groups: list["Group"]
-    block: list
+    block: list["Member"]
     read: dict[str, str]
+    email: str = ""
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Member":
-        member_payload = payload["payload"]["member"] if "payload" in payload else payload
+        member_payload = payload.get("payload", payload)
+        member_payload = member_payload.get("member", member_payload)
 
         groups = [
-            Group(
-                name=group.get("name", ""),
-                id=group.get("group_id", ""),
-                owner_id=group.get("owner_id", ""),
-                created_at=group.get("created_at", ""),
-            )
+            Group.from_payload(group)
             for group in member_payload.get("groups", [])
         ]
 
@@ -30,6 +27,8 @@ class Member:
             name=member_payload.get("name", ""),
             id=member_payload.get("id", ""),
             groups=groups,
-            block=member_payload.get("block", []),
+            block=[cls.from_payload(item if isinstance(item, dict) else {"id": item})
+                   for item in member_payload.get("block", []) or []],
             read=member_payload.get("read", {}),
+            email=member_payload.get("email", ""),
         )

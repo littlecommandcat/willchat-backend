@@ -21,7 +21,8 @@ export interface Message {
   timestamp: number;
   type: number;
   attachments?: { data?: string; mime_type?: string }[];
-  reply_to?: { authorid?: string; content?: string } | null;
+  author?: Member;
+  reply_to?: { author?: Member; authorid?: string; content?: string } | null;
   status?: string;
   group?: { id: string; name: string } | null;
   __pending__?: boolean;
